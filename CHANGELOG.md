@@ -4,6 +4,43 @@ All notable changes to SemFuse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-08-22
+
+### Improved — SLM provider evidence grounding and citation enforcement
+
+The SLM provider (`llm_provider="slm"`) now post-processes model output
+to ensure answers are grounded in retrieved evidence with proper citations:
+
+- **Citation enforcement**: If the model forgets to cite, `[1]` is appended.
+- **Grounding validation**: The answer is checked for token overlap with
+  evidence passages. If the model hallucinates (no overlap), the provider
+  falls back to the extractive template provider — no fabricated answers.
+- **Refusal detection**: Honest refusals ("I could not find...", "জানি না")
+  are detected and passed through as-is.
+- **Verbose trimming**: Small models often repeat or ramble. Output is
+  trimmed to the first 3 sentences or up to the first citation.
+- **Optimized generation params**: `max_new_tokens=128`, `temperature=0.1`,
+  `repetition_penalty=1.1` — tuned for factual answers from a 0.5B model.
+
+### Improved — RAG prompt construction
+
+- Restructured prompt with explicit "Evidence:" section, numbered passages,
+  and step-by-step instructions (find → extract → cite → language-match).
+- Short, imperative system instruction (< 300 chars) for small-model
+  comprehension.
+- `build_system_instruction()` exported for chat-template-based generation.
+
+### Added — Config auto-selection
+
+- `SemFuseConfig` now auto-selects `Qwen/Qwen2.5-0.5B-Instruct` as the
+  `llm_model` when `llm_provider="slm"` and the user hasn't overridden it.
+
+### Tests: 258 total (up from 234)
+
+- 24 new tests for SLM grounding logic (citation enforcement, refusal
+  detection, grounding validation, verbose trimming, evidence extraction).
+- All passing, ruff clean, mypy clean (60 source files).
+
 ## [0.4.0] — 2026-08-22
 
 ### Added — Local SLM provider (no API key needed)

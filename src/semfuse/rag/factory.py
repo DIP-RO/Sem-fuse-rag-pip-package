@@ -25,11 +25,15 @@ def create_llm_provider(config: SemFuseConfig) -> LLMProvider:
 
         options = dict(config.llm_options)
         device = options.pop("device", config.device)
-        max_new_tokens = options.pop("max_new_tokens", 256)
+        max_new_tokens = options.pop("max_new_tokens", 128)
+        temperature = options.pop("temperature", 0.1)
+        repetition_penalty = options.pop("repetition_penalty", 1.1)
         return LocalSLMProvider(
             model=config.llm_model,
             device=device if isinstance(device, str) else None,
-            max_new_tokens=max_new_tokens if isinstance(max_new_tokens, int) else 256,
+            max_new_tokens=max_new_tokens if isinstance(max_new_tokens, int) else 128,
+            temperature=temperature if isinstance(temperature, (int, float)) else 0.1,
+            repetition_penalty=repetition_penalty if isinstance(repetition_penalty, (int, float)) else 1.1,
             **options,
         )
     if key == "openai":

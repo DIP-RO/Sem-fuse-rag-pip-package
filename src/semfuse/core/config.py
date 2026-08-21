@@ -82,3 +82,7 @@ class SemFuseConfig:
         if isinstance(self.fusion_method, str):
             self.fusion_method = FusionMethod(self.fusion_method)
         self.storage_path = Path(self.storage_path)
+        # Auto-select the SLM default model when llm_provider="slm" and the
+        # user hasn't overridden llm_model.
+        if self.llm_provider == "slm" and self.llm_model == DEFAULT_LLM_MODEL:
+            self.llm_model = DEFAULT_SLM_MODEL
