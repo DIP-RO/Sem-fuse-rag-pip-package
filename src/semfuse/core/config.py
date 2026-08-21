@@ -12,6 +12,7 @@ DEFAULT_EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 DEFAULT_EMBEDDING_DIMENSION = 384
 DEFAULT_RERANKER_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 DEFAULT_LLM_MODEL = "gpt-4o-mini"
+DEFAULT_SLM_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 EMBEDDING_VERSION = "1"
 INDEX_VERSION = "1"
 DEFAULT_STORAGE_DIR = ".semfuse"
@@ -48,7 +49,8 @@ class SemFuseConfig:
     reranker_model: str = DEFAULT_RERANKER_MODEL
     # Candidates fetched for reranking before cutting back to top_k.
     rerank_candidates: int = 25
-    # RAG: "template" (extractive, offline, default) or "openai" (semfuse[rag]).
+    # RAG: "template" (extractive, offline, default), "slm" (local SLM,
+    # semfuse[slm]), or "openai" (semfuse[rag]).
     llm_provider: str = "template"
     llm_model: str = DEFAULT_LLM_MODEL
     # Extra provider-specific options forwarded to the LLM provider.

@@ -205,6 +205,77 @@ _TRANSLITERATIONS: dict[str, str] = {
     "noy": "নয়", "dosh": "দশ",
     # More common patterns
     "beshi": "বেশি", "kom": "কম", "shob": "সব", "shobcheye": "সবচেয়ে",
+    # Extended content words — high-frequency terms
+    # Government / politics
+    "shorkar": "সরকার", "sharkar": "সরকার",
+    "shongshod": "সংসদ", "shongshad": "সংসদ",
+    "shadhin": "স্বাধীন", "muktijuddho": "মুক্তিযুদ্ধ",
+    "shahid": "শহীদ", "shahidbedi": "শহীদ বেদী",
+    # Education
+    "shikkhika": "শিক্ষিকা",
+    "folafol": "ফলাফল",
+    "podhbon": "পঠন", "lekhon": "লেখন",
+    "pustok": "পুস্তক",
+    "proshikkhon": "প্রশিক্ষণ",
+    # Geography / nature
+    "somudro": "সমুদ্র", "pahar": "পাহাড়",
+    "vbon": "ভূমি", "bhumi": "ভূমি",
+    "jol": "জল", "vayu": "বায়ু", "hawa": "হাওয়া",
+    "brishti": "বৃষ্টি", "megh": "মেঘ",
+    "shurjo": "সূর্য", "chondro": "চন্দ্র",
+    # Food / agriculture
+    "chaul": "চাল", "dhan": "ধান", "gorom": "গরম",
+    "morich": "মরিচ", "nun": "নুন", "tel": "তেল",
+    "shak": "শাক", "shobji": "সবজি", "fol": "ফল",
+    "mach": "মাছ", "dim": "ডিম", "goru": "গরু",
+    "murgi": "মুরগি", "hash": "হাঁস",
+    # Body / health
+    "shorir": "শরীর", "shorirer": "শরীরের",
+    "chokh": "চোখ", "kan": "কান", "naak": "নাক",
+    "mukh": "মুখ", "dant": "দাঁত", "hath": "হাত",
+    "pa": "পা", "matha": "মাথা", "buk": "বুক",
+    "piti": "পিঠ", "pet": "পেট",
+    "shorirjuddho": "শরীরচর্চা",
+    # Time / calendar
+    "dupur": "দুপুর", "bikal": "বিকাল",
+    "ratri": "রাত্রি",
+    "shoptaho": "সপ্তাহ", "mash": "মাস", "shol": "শতক",
+    "borsho": "বছর", "shomvossor": "সংবৎসর",
+    "shopto": "সপ্ত", "ekush": "একুশ", "trish": "ত্রিশ",
+    # Social / family
+    "abba": "আব্বা", "amma": "আম্মা", "baba": "বাবা", "ma": "মা",
+    "bhai": "ভাই", "chacha": "চাচা", "chachi": "চাচি",
+    "mama": "মামা", "mami": "মামি", "fufu": "ফুফু", "khalato": "খালাতো",
+    "shoshur": "শ্বশুর", "shashuri": "শাশুড়ি",
+    "bor": "বর", "konya": "কন্যা", "bou": "বউ",
+    # Commerce / daily life
+    "dokan": "দোকান", "bazar": "বাজার", "haat": "হাট",
+    "joma": "জমা", "khoroch": "খরচ", "baki": "বাকি",
+    "dam": "দাম", "mullo": "মূল্য",
+    "chukti": "চুক্তি", "prodan": "প্রদান",
+    # Emotions / qualities
+    "khushi": "খুশি", "dukkho": "দুঃখ", "raag": "রাগ",
+    "bhoy": "ভয়", "shahosh": "সাহস", "shanti": "শান্তি",
+    "shommota": "সম্মতি", "protibha": "প্রতিভা",
+    "shokkhotto": "শক্ততা", "dourbolyo": "দুর্বলতা",
+    # Common verbs (more)
+    "shunbo": "শুনব", "shunte": "শুনতে", "shunchi": "শুনছি",
+    "likhbo": "লিখব", "likhte": "লিখতে", "likhchi": "লিখছি",
+    "porbo": "পড়ব", "porte": "পড়তে", "porchi": "পড়ছি",
+    "cholbo": "চলব", "cholte": "চলতে", "cholche": "চলছে",
+    "dhorbo": "ধরব", "dhorte": "ধরতে",
+    "mathabo": "মাথাব", "mathate": "মাথাতে",
+    # Question / function words (more)
+    "karonnoy": "কারণে",
+    "tobuo": "তবুও",
+    "hoyto": "হয়তো", "hoito": "হয়তো",
+    "jodio": "যদিও", "moton": "মতন", "moto": "মতো",
+    "shomosto": "সমস্ত", "shobkichu": "সবকিছু",
+    # Places (extended)
+    "jatiyo": "জাতীয়", "jela": "জেলা", "upozela": "উপজেলা",
+    "thana": "থানা", "shohor": "শহর",
+    "rastam": "রাস্তা", "rasta": "রাস্তা",
+    "bondor": "বন্দর", "sthan": "স্থান",
 }
 
 
@@ -233,13 +304,19 @@ def looks_banglish(text: str) -> bool:
 
 
 class BanglishNormalizer:
-    """Canonicalizes Banglish spelling and optionally maps tokens to Bangla.
+    """Canonicalizes Banglish spelling and maps tokens to Bangla script.
 
-    ``normalize`` folds spelling variants to canonical romanizations so that
-    ``achhe`` and ``ache`` embed and match identically. ``transliterate``
-    additionally replaces known tokens with their Bangla-script equivalents,
-    bridging Banglish queries to Bangla documents; unknown tokens (including
-    embedded English words) pass through unchanged.
+    Two-layer transliteration:
+
+    1. **Dictionary layer** — high-confidence curated mappings for common
+       words (``rajdhani → রাজধানী``, ``bhalo → ভালো``, etc.).
+    2. **Phonetic fallback** — for any token NOT in the dictionary, a
+       rule-based phonetic engine converts the romanized token to Bangla
+       script using consonant/vowel mapping rules.  This covers the
+       unlimited long tail of romanization variants.
+
+    English words embedded in Banglish text pass through unchanged (both
+    layers skip them).
     """
 
     def normalize(self, text: str) -> str:
@@ -250,9 +327,15 @@ class BanglishNormalizer:
         return _LATIN_TOKEN_RE.sub(fold, text)
 
     def transliterate(self, text: str) -> str:
-        def to_bangla(match: re.Match[str]) -> str:
+        from semfuse.language.phonetic import phonetic_transliterate
+
+        # Step 1: dictionary lookup for known tokens.
+        def dict_lookup(match: re.Match[str]) -> str:
             token = _ELONGATION_RE.sub(r"\1", match.group(0).lower())
             token = _VARIANTS.get(token, token)
-            return _TRANSLITERATIONS.get(token, token)
+            return _TRANSLITERATIONS.get(token, match.group(0))  # keep original if not found
 
-        return _LATIN_TOKEN_RE.sub(to_bangla, text)
+        dict_result = _LATIN_TOKEN_RE.sub(dict_lookup, text)
+
+        # Step 2: phonetic fallback for remaining Latin tokens.
+        return phonetic_transliterate(dict_result)

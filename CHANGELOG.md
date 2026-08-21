@@ -4,6 +4,49 @@ All notable changes to SemFuse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] — 2026-08-22
+
+### Added — Local SLM provider (no API key needed)
+
+- `LocalSLMProvider` (`llm_provider="slm"`): uses
+  [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
+  (500M params, ~1 GB) for generative RAG answers on CPU — no OpenAI key,
+  no network after initial download. Lazy-loaded, model cached locally.
+- New `semfuse[slm]` extra: `transformers>=4.40` + `torch>=2.0`.
+- Factory now supports three providers: `template` (extractive, default),
+  `slm` (local generative), `openai` (optional, external API).
+- OpenAI is no longer the primary recommended path — the SLM provider
+  makes SemFuse fully self-contained for generative RAG.
+
+### Added — Phonetic transliteration engine
+
+- `semfuse.language.phonetic`: rule-based phonetic Banglish→Bangla
+  transliteration that covers **any** romanized token, not just dictionary
+  entries. Uses greedy longest-match over consonant/vowel mapping tables
+  (Avro Phonetic-style).
+- Two-layer transliteration in `BanglishNormalizer`:
+  1. **Dictionary layer** — high-confidence curated mappings for common
+     words (~250 entries).
+  2. **Phonetic fallback** — any unknown token is transliterated by rule,
+     giving effectively unlimited coverage without a 1M-entry dictionary.
+- English words embedded in Banglish pass through unchanged at both layers.
+
+### Improved — Expanded dictionary
+
+- Curated transliteration dictionary expanded from ~150 to ~250 entries:
+  government/politics, education, geography/nature, food/agriculture,
+  body/health, time/calendar, social/family, commerce, emotions, common
+  verbs, question/function words, and place names.
+
+### Changed
+
+- README updated to feature the SLM provider as the recommended generative
+  path; OpenAI reframed as optional.
+- `semfuse[all]` extra now includes `transformers` and `torch`.
+- Factory error message lists all three supported providers.
+
+## [0.3.0] — 2026-08-22
+
 ## [0.3.0] — 2026-08-22
 
 ### Fixed — Bangla RAG answer quality

@@ -46,7 +46,7 @@ from semfuse.vectorstores.local import LocalVectorStore
 
 logger = get_logger(__name__)
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 _INDEX_INFO_FILE = "index_info.json"
 

@@ -94,7 +94,7 @@ Bangladesher rajdhani ki?            ← Banglish (variant)
 - **Document ingestion**: TXT/MD, PDF, DOCX loaders with recursive chunking
 - **Keyword (BM25) and hybrid retrieval** with weighted / RRF score fusion
 - **Reranking**: offline lexical reranker or a multilingual cross-encoder
-- **RAG with numbered citations**: offline extractive default, OpenAI optional
+- **RAG with numbered citations**: offline extractive default, local SLM for generative answers, OpenAI optional
 - **Evaluation subsystem**: Recall@K, MRR, NDCG, Hit@K + built-in Banglish benchmark
 - **Local persistent vector store** (numpy-based, no external services)
 - **Deterministic offline embedding provider** for testing
@@ -292,8 +292,18 @@ The `RAGResponse` object exposes:
 | `prompt` | `str` | The exact prompt sent to the LLM (for audit) |
 
 The default provider is **extractive** (`llm_provider="template"`): offline, no
-API key, returns the best-matching passage with a citation. For generative
-answers:
+API key, returns a concise extracted answer with a citation. For generative
+answers, use the **local SLM** provider (no API key, runs on CPU):
+
+```python
+db = SemFuse(llm_provider="slm")  # requires: pip install semfuse[slm]
+```
+
+The SLM provider uses [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
+(500M params, ~1 GB) — small enough to run on a laptop, with Bangla/English/mixed
+support. The model downloads once and is cached locally.
+
+For OpenAI (optional, requires API key):
 
 ```python
 db = SemFuse(llm_provider="openai", llm_model="gpt-4o-mini")  # requires semfuse[rag]
@@ -445,7 +455,7 @@ be swapped without touching the public API.
                     |
                     v
              Optional RAG  ->  LLM
-             (template / openai)
+             (template / slm / openai)
 ```
 
 See [docs/architecture.md](docs/architecture.md) and
@@ -551,8 +561,8 @@ All options can be passed to `SemFuse(...)` or set via `SemFuseConfig`.
 | `reranker` | `str/None` | `None` | `None`, `"lexical"`, or `"cross-encoder"` |
 | `reranker_model` | `str` | `"cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"` | Cross-encoder model |
 | `rerank_candidates` | `int` | `25` | Candidates fetched before reranking |
-| `llm_provider` | `str` | `"template"` | `"template"` (extractive) or `"openai"` |
-| `llm_model` | `str` | `"gpt-4o-mini"` | LLM model name |
+| `llm_provider` | `str` | `"template"` | `"template"` (extractive), `"slm"` (local SLM), or `"openai"` |
+| `llm_model` | `str` | `"gpt-4o-mini"` | LLM/SLM model name (use `Qwen/Qwen2.5-0.5B-Instruct` for SLM) |
 | `device` | `str/None` | `None` | `"cpu"`, `"cuda"`, `"mps"`, or `None` (auto) |
 | `lazy` | `bool` | `True` | Lazy-load the embedding model on first use |
 
@@ -618,7 +628,8 @@ pip install semfuse[pdf]       # PDF loader (pypdf)
 pip install semfuse[docx]      # DOCX loader (python-docx)
 pip install semfuse[faiss]     # FAISS vector store (planned)
 pip install semfuse[qdrant]    # Qdrant vector store (planned)
-pip install semfuse[rag]       # RAG / OpenAI LLM provider
+pip install semfuse[slm]       # Local SLM RAG provider (transformers + torch, ~1 GB model)
+pip install semfuse[rag]       # OpenAI RAG provider (optional, requires API key)
 pip install semfuse[dev]       # pytest, ruff, mypy
 pip install semfuse[all]       # everything
 ```
@@ -650,9 +661,10 @@ docker pull ghcr.io/dip-ro/semfuse:latest
   ability. Growing the lexicons (with benchmark evidence) is welcome.
 - The default local vector store is in-memory with file persistence; it is not
   optimized for very large corpora (FAISS/Qdrant extras will address this).
-- The default RAG provider is extractive, not generative — it returns the
-  best-matching passage with a citation. Configure `llm_provider="openai"` for
-  generated answers.
+- The default RAG provider is extractive, not generative — it returns a
+  concise extracted answer with a citation. For generative answers without
+  an API key, use `llm_provider="slm"` (requires `semfuse[slm]`). For OpenAI,
+  use `llm_provider="openai"` (requires `semfuse[rag]` + API key).
 - The BM25 index is rebuilt in memory when the corpus changes; this is fine for
   the corpus sizes the local store targets.
 
