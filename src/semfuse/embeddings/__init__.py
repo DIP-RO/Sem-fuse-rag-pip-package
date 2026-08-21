@@ -1,0 +1,1 @@
+"""semfuse.embeddings subpackage."""
