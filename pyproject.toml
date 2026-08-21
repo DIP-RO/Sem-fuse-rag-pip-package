@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "semfuse"
-version = "0.5.0"
+version = "0.6.0"
 description = "Lightweight multilingual semantic retrieval with first-class Bangla, English, Banglish, and mixed-language support, plus optional RAG."
 readme = "README.md"
 license = "Apache-2.0"
@@ -35,10 +35,10 @@ classifiers = [
 ]
 dependencies = [
   "numpy>=1.24",
-  "sentence-transformers>=2.2",
 ]
 
 [project.optional-dependencies]
+embeddings = ["sentence-transformers>=2.2"]
 pdf = ["pypdf>=4.0"]
 docx = ["python-docx>=1.1"]
 faiss = ["faiss-cpu>=1.7"]
@@ -52,6 +52,7 @@ dev = [
   "mypy>=1.10",
 ]
 all = [
+  "sentence-transformers>=2.2",
   "pypdf>=4.0",
   "python-docx>=1.1",
   "faiss-cpu>=1.7",

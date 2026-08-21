@@ -423,39 +423,103 @@ SemFuse is layered: **Language → Embeddings → Ingestion → Indexing → Ret
 → (Reranker) → (RAG)**. Every pluggable layer is a `Protocol` so backends can
 be swapped without touching the public API.
 
+```mermaid
+graph TD
+    Client["SemFuse (public client)"]
+
+    subgraph "Language Layer"
+        Detect["detect_language"]
+        Norm["normalize_for_search"]
+        Banglish["BanglishNormalizer<br/>(dict + phonetic engine)"]
+    end
+
+    subgraph "Embedding Layer"
+        Local["LocalEmbeddingProvider<br/>(sentence-transformers)"]
+        Hashing["HashingEmbeddingProvider<br/>(deterministic, zero-dep)"]
+    end
+
+    subgraph "Ingestion Layer"
+        Loaders["Loaders<br/>(TXT/MD/PDF/DOCX)"]
+        Chunker["RecursiveCharacterChunker<br/>(Bangla dari aware)"]
+        Dedup["Content-hash dedup"]
+    end
+
+    subgraph "Vector Store"
+        Store["LocalVectorStore<br/>(growable buffer, argpartition)"]
+    end
+
+    subgraph "Retrieval Engine"
+        Semantic["SemanticRetriever<br/>(cosine/dot/euclidean)"]
+        Keyword["KeywordRetriever<br/>(BM25 inverted index)"]
+        Hybrid["HybridRetriever<br/>(weighted / RRF fusion)"]
+    end
+
+    subgraph "Reranking (optional)"
+        Lexical["LexicalReranker<br/>(offline, Dice overlap)"]
+        CrossEncoder["CrossEncoderReranker<br/>(multilingual)"]
+    end
+
+    subgraph "RAG (optional)"
+        Template["TemplateLLMProvider<br/>(extractive, offline)"]
+        SLM["LocalSLMProvider<br/>(Qwen2.5-0.5B, CPU)"]
+        OpenAI["OpenAILLMProvider<br/>(optional, API key)"]
+    end
+
+    Client --> Detect
+    Client --> Local
+    Client --> Hashing
+    Client --> Loaders
+    Detect --> Norm
+    Norm --> Banglish
+    Loaders --> Chunker
+    Chunker --> Dedup
+    Dedup --> Store
+    Local --> Store
+    Hashing --> Store
+    Store --> Semantic
+    Store --> Keyword
+    Semantic --> Hybrid
+    Keyword --> Hybrid
+    Hybrid --> Lexical
+    Hybrid --> CrossEncoder
+    Lexical --> Results["Results"]
+    CrossEncoder --> Results
+    Results --> Template
+    Results --> SLM
+    Results --> OpenAI
 ```
-                 SemFuse  (public client)
-                    |
-       +------------+-------------+
-       |            |             |
-       v            v             v
-   Language      Embeddings    Ingestion
-   (detect       (local ST     (loaders +
-    + normalize   + hashing)    chunking +
-    + banglish)                 dedup)
-       |            |             |
-       +------------+-------------+
-                    |
-                    v
-               Indexing
-                    |
-                    v
-             Retrieval Engine
-             /      |       \
-     Semantic    Keyword    Hybrid
-     (cosine/    (BM25)    (weighted/
-      dot/euclid)          RRF fusion)
-                    |
-                    v
-                Reranker (optional)
-                (lexical / cross-encoder)
-                    |
-                    v
-                 Results
-                    |
-                    v
-             Optional RAG  ->  LLM
-             (template / slm / openai)
+
+### Banglish Processing Pipeline
+
+```mermaid
+graph LR
+    Input["Input text<br/>(Latin script)"] --> Detect{"detect_language"}
+    Detect -->|Bangla| PassBN["Pass through<br/>(already Bangla)"]
+    Detect -->|English| PassEN["Pass through<br/>(English)"]
+    Detect -->|Banglish| Dict["Dictionary lookup<br/>~250 curated entries"]
+    Dict --> Phonetic["Phonetic fallback<br/>(rule-based, any token)"]
+    Phonetic --> Output["Bangla script output"]
+    PassBN --> Output
+    PassEN --> Output
+```
+
+### RAG Answer Generation Pipeline
+
+```mermaid
+graph TD
+    Q["Question"] --> Retrieve["Retrieve top-k passages"]
+    Retrieve --> Prompt["Build evidence-grounded prompt"]
+    Prompt --> Gen{"Generate answer"}
+    Gen -->|Template| Extract["Extractive answer<br/>(question-aware span)"]
+    Gen -->|SLM| SLMGen["SLM generation<br/>(Qwen2.5-0.5B)"]
+    Gen -->|OpenAI| OAIGen["OpenAI generation"]
+    SLMGen --> Ground{"Grounding check"}
+    Ground -->|Grounded| Cite["Enforce citation [n]"]
+    Ground -->|Hallucinated| Fallback["Extractive fallback"]
+    Extract --> Answer["Cited answer"]
+    Cite --> Answer
+    Fallback --> Answer
+    OAIGen --> Answer
 ```
 
 See [docs/architecture.md](docs/architecture.md) and
@@ -623,7 +687,8 @@ All inherit from `SemFuseError`:
 ## Installation Extras
 
 ```bash
-pip install semfuse            # core (numpy + sentence-transformers)
+pip install semfuse            # core only (~83 KB wheel, numpy only)
+pip install semfuse[embeddings] # sentence-transformers for real embeddings
 pip install semfuse[pdf]       # PDF loader (pypdf)
 pip install semfuse[docx]      # DOCX loader (python-docx)
 pip install semfuse[faiss]     # FAISS vector store (planned)
@@ -633,6 +698,12 @@ pip install semfuse[rag]       # OpenAI RAG provider (optional, requires API key
 pip install semfuse[dev]       # pytest, ruff, mypy
 pip install semfuse[all]       # everything
 ```
+
+> **Lightweight by default**: The core `pip install semfuse` pulls only `numpy`
+> (~50 MB). The package auto-detects whether `sentence-transformers` is
+> installed and falls back to the zero-dependency hashing provider if not.
+> Import time is ~40 ms with no heavy modules loaded until you create a
+> `SemFuse` instance.
 
 **Docker:**
 
@@ -644,10 +715,16 @@ docker pull ghcr.io/dip-ro/semfuse:latest
 
 ## Performance
 
-- **Lazy model loading** — import is fast; the model loads on first use
+- **Package size**: 83 KB wheel, 423 KB installed — truly lightweight
+- **Import time**: ~40 ms (numpy deferred to first `SemFuse()` call)
+- **Zero heavy deps at import**: `sentence-transformers`, `torch`, and
+  `transformers` are NOT loaded until explicitly used
+- **Lazy model loading** — embedding model loads on first use
 - **Model reuse** — one instance shared across all queries
 - **Batched embedding generation** — documents embedded in batches
 - **Content-hash deduplication** — no duplicate chunks stored or re-embedded
+- **Growable vector buffer** — amortized O(1) insertion, O(n) top-k search
+- **BM25 inverted index** — O(matched docs) instead of O(n × query terms)
 - **Persistent index** — reopen without re-indexing
 - **CPU by default** — GPU used when available and supported
 - **CPU-only Docker image** — ~1.8 GB instead of multi-GB CUDA default
@@ -656,9 +733,11 @@ docker pull ghcr.io/dip-ro/semfuse:latest
 
 ## Limitations
 
-- Banglish transliteration is lexicon-based: high-frequency words are covered,
-  long-tail romanizations fall back to the multilingual model's cross-script
-  ability. Growing the lexicons (with benchmark evidence) is welcome.
+- Banglish transliteration uses a two-layer approach (dictionary + phonetic
+  engine): common words are covered by ~250 curated entries, and any unknown
+  token is handled by the rule-based phonetic fallback. The phonetic engine
+  may not produce perfect Bangla for every romanization variant, but it
+  ensures consistent query-document matching.
 - The default local vector store is in-memory with file persistence; it is not
   optimized for very large corpora (FAISS/Qdrant extras will address this).
 - The default RAG provider is extractive, not generative — it returns a

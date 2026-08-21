@@ -178,7 +178,19 @@ def _extract_answer_span(question: str, passage: str, qtype: str) -> str | None:
         m = re.search(r"\bis\s+in\s+(.+?)[.।]?$", best_sent, re.IGNORECASE)
         if m:
             return m.group(1).strip()
+        m = re.search(r"\bis\s+(?:located|situated)\s+in\s+(.+?)[.।]?$", best_sent, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+        # Bangla: "X-এ অবস্থিত" / "X তে আছে"
         m = re.search(r"অবস্থিত\s+(.+?)[।.]?$", best_sent)
+        if m:
+            return m.group(1).strip()
+        # "X এর অবস্থান Y" pattern
+        m = re.search(r"অবস্থান\s+(.+?)[।.]?$", best_sent)
+        if m:
+            return m.group(1).strip()
+        # "X is Y-এ" / "X Y-তে" — extract the locative noun
+        m = re.search(r"(?:নদী|শহর|রাজধানী|দেশ)\s+(\S+?(?:ে|তে|ত))[।.]?$", best_sent)
         if m:
             return m.group(1).strip()
 
@@ -188,6 +200,42 @@ def _extract_answer_span(question: str, passage: str, qtype: str) -> str | None:
         if m:
             return m.group(1).strip()
         m = re.search(r"(\d{4}\s*সালে|\d{1,2}\s*(?:জানুয়ারি|ফেব্রুয়ারি|মার্চ|এপ্রিল|মে|জুন|জুলাই|আগস্ট|সেপ্টেম্বর|অক্টোবর|নভেম্বর|ডিসেম্বর))", best_sent)
+        if m:
+            return m.group(1).strip()
+        # English year patterns
+        m = re.search(r"\b(1[89]\d{2}|20\d{2})\b", best_sent)
+        if m:
+            return m.group(1).strip()
+        # English month patterns
+        m = re.search(r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\b", best_sent, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+
+    if qtype == "who":
+        # "X was born" / "X জন্মগ্রহণ করেন" — extract the person name
+        m = re.match(r"^(.+?)\s+(?:was|is)\s+(?:born|a |an )", best_sent, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+        # Bangla: first token is often the person
+        m = re.search(r"জন্মগ্রহণ\s+করেন", best_sent)
+        if m:
+            tokens = best_sent.rstrip("।.").strip().split()
+            if tokens:
+                return tokens[0].strip()
+
+    if qtype == "how_many":
+        # Extract numbers from the passage
+        m = re.search(r"(\d+(?:,\d{3})*(?:\.\d+)?)", best_sent)
+        if m:
+            return m.group(1).strip()
+        # Bangla digits
+        m = re.search(r"([০-৯]+)", best_sent)
+        if m:
+            return m.group(1).strip()
+
+    if qtype == "how":
+        # "X is done by Y" / "X করে Y" — extract the method
+        m = re.search(r"\bby\s+(.+?)[.।]?$", best_sent, re.IGNORECASE)
         if m:
             return m.group(1).strip()
 

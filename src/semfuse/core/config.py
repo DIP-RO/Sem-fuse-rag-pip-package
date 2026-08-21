@@ -28,7 +28,9 @@ class SemFuseConfig:
 
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_dimension: int = DEFAULT_EMBEDDING_DIMENSION
-    # Provider key: "local" (sentence-transformers), "hashing" (deterministic, offline).
+    # Provider key: "local" (sentence-transformers, semfuse[embeddings]),
+    # "hashing" (deterministic, offline, zero-dep). Defaults to "local" if
+    # sentence-transformers is installed, otherwise "hashing".
     embedding_provider: str = "local"
     vector_store: str = "local"
     storage_path: str | Path = DEFAULT_STORAGE_DIR
@@ -86,3 +88,13 @@ class SemFuseConfig:
         # user hasn't overridden llm_model.
         if self.llm_provider == "slm" and self.llm_model == DEFAULT_LLM_MODEL:
             self.llm_model = DEFAULT_SLM_MODEL
+        # Auto-detect embedding provider: if sentence-transformers is not
+        # installed and the user didn't explicitly choose, fall back to
+        # the zero-dependency hashing provider.
+        if self.embedding_provider == "local":
+            try:
+                import sentence_transformers  # noqa: F401
+            except ImportError:
+                self.embedding_provider = "hashing"
+                self.embedding_model = "hashing-ngram"
+                self.embedding_dimension = 256

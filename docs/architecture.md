@@ -23,32 +23,86 @@ simple path.
 
 ## Logical layers
 
+```mermaid
+graph TD
+    Client["SemFuse (public client)"]
+
+    subgraph "Language Layer"
+        Detect["detect_language"]
+        Norm["normalize_for_search"]
+        Banglish["BanglishNormalizer<br/>(dict + phonetic engine)"]
+    end
+
+    subgraph "Embedding Layer"
+        Local["LocalEmbeddingProvider<br/>(sentence-transformers)"]
+        Hashing["HashingEmbeddingProvider<br/>(deterministic, zero-dep)"]
+    end
+
+    subgraph "Ingestion Layer"
+        Loaders["Loaders (TXT/MD/PDF/DOCX)"]
+        Chunker["RecursiveCharacterChunker"]
+        Dedup["Content-hash dedup"]
+    end
+
+    subgraph "Vector Store"
+        Store["LocalVectorStore<br/>(growable buffer + argpartition)"]
+    end
+
+    subgraph "Retrieval Engine"
+        Semantic["SemanticRetriever"]
+        Keyword["KeywordRetriever<br/>(BM25 inverted index)"]
+        Hybrid["HybridRetriever<br/>(weighted / RRF fusion)"]
+    end
+
+    subgraph "Reranking (optional)"
+        Reranker["LexicalReranker / CrossEncoderReranker"]
+    end
+
+    subgraph "RAG (optional)"
+        RAG["Template / SLM / OpenAI"]
+    end
+
+    Client --> Detect & Local & Hashing & Loaders
+    Detect --> Norm --> Banglish
+    Loaders --> Chunker --> Dedup --> Store
+    Local & Hashing --> Store
+    Store --> Semantic & Keyword
+    Semantic & Keyword --> Hybrid
+    Hybrid --> Reranker
+    Reranker --> Results["Results"]
+    Results --> RAG
 ```
-                 SemFuse  (public client)
-                    |
-       +------------+-------------+
-       |            |             |
-       v            v             v
-   Language      Embeddings    Ingestion
-       |            |             |
-       +------------+-------------+
-                    |
-                    v
-               Indexing
-                    |
-                    v
-             Retrieval Engine
-             /      |       \
-     Semantic    Keyword    Hybrid
-                    |
-                    v
-                Reranker (optional)
-                    |
-                    v
-                 Results
-                    |
-                    v
-             Optional RAG  ->  LLM
+
+### Data flow: query to answer
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as SemFuse
+    participant L as Language Layer
+    participant R as Retrieval
+    participant RR as Reranker
+    participant G as RAG Provider
+
+    U->>C: search("Bangladesh er capital ki?")
+    C->>L: detect_language
+    L-->>C: Language.BANGLISH
+    C->>L: normalize_for_search
+    L-->>C: "বাংলাদেশ এর রাজধানী কি?"
+    C->>R: hybrid search
+    R->>R: semantic + keyword (parallel)
+    R-->>C: fused results
+    C->>RR: rerank (optional)
+    RR-->>C: reranked results
+    C-->>U: [SearchResult(...), ...]
+
+    U->>C: ask("Bangladesh er capital ki?")
+    C->>L: normalize query
+    C->>R: retrieve top-k
+    R-->>C: evidence passages
+    C->>G: generate(prompt + evidence)
+    G-->>C: cited answer
+    C-->>U: RAGResponse(answer, citations)
 ```
 
 ## Module map (all phases implemented)

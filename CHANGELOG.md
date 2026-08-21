@@ -4,6 +4,52 @@ All notable changes to SemFuse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-08-22
+
+### Changed — Lightweight by default (sentence-transformers now optional)
+
+- `sentence-transformers` moved from required to optional (`semfuse[embeddings]`).
+- Core `pip install semfuse` now pulls only `numpy` (~50 MB, not ~2 GB torch).
+- `SemFuseConfig` auto-detects: if `sentence-transformers` is not installed,
+  falls back to the zero-dependency hashing provider automatically.
+- **Package wheel: 83 KB** (down from requiring ~2 GB torch).
+- **Import time: ~40 ms** (down from ~95 ms), numpy deferred to first
+  `SemFuse()` call. No heavy modules loaded at import time.
+- Lazy imports in `embeddings/factory.py` and `core/client.py` — numpy,
+  sentence-transformers, torch, and transformers are NOT loaded until
+  a `SemFuse` instance is created.
+- `embeddings/base.py` and `vectorstores/base.py` use `TYPE_CHECKING`
+  for numpy type hints (no runtime numpy import).
+
+### Added — Mermaid architecture diagrams
+
+- README now has three mermaid diagrams:
+  1. **Full architecture** — all layers from language to RAG
+  2. **Banglish processing pipeline** — detect → dictionary → phonetic
+  3. **RAG answer generation pipeline** — retrieve → generate → ground → cite
+- `docs/architecture.md` updated with mermaid flow graph + sequence diagram
+  showing query-to-answer data flow.
+
+### Improved — Robust Bangla error handling
+
+- `RAGPipeline.ask()` now has **extractive fallback**: if the SLM or OpenAI
+  provider crashes or returns empty, the pipeline falls back to the
+  extractive template provider — the user always gets a grounded, cited answer.
+- "No context" responses are now **language-aware**: Bangla questions get
+  Bangla "তথ্য পাওয়া যায়নি" instead of English.
+- Template provider expanded with more Bangla question patterns:
+  - "who" questions (জন্মগ্রহণ করেন pattern)
+  - "how many" (Bangla digits ০-৯ extraction)
+  - "how" (by-method extraction)
+  - More "where" patterns (located, situated, অবস্থান)
+  - English year/month extraction for "when" questions
+
+### Tests: 258 total (unchanged count, all passing)
+
+- All 258 tests pass with the new lightweight dependency structure.
+- Ruff clean, mypy clean (60 source files).
+- CI green on all Python versions (3.10–3.13).
+
 ## [0.5.0] — 2026-08-22
 
 ### Improved — SLM provider evidence grounding and citation enforcement

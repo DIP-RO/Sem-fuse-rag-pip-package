@@ -42,11 +42,10 @@ from semfuse.retrieval.keyword import KeywordRetriever
 from semfuse.retrieval.semantic import SemanticRetriever
 from semfuse.utils.hashing import content_hash, short_hash
 from semfuse.utils.logging import get_logger
-from semfuse.vectorstores.local import LocalVectorStore
 
 logger = get_logger(__name__)
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 _INDEX_INFO_FILE = "index_info.json"
 
@@ -130,6 +129,8 @@ class SemFuse:
             )
 
         self._embeddings: EmbeddingProvider = create_embedding_provider(cfg)
+        from semfuse.vectorstores.local import LocalVectorStore
+
         self._store = LocalVectorStore(
             storage_path=cfg.storage_path,
             embedding_model=self._embeddings.model_name,
