@@ -15,19 +15,43 @@ def _r(chunk_id: str, score: float) -> SearchResult:
 
 
 def test_weighted_fusion_sums_scores() -> None:
+    # With min-max normalization, each retriever's scores are scaled to [0, 1]
+    # before weighting.  List a: [0.8, 0.4] -> [1.0, 0.0].  List b: [1.0, 0.5]
+    # -> [1.0, 0.0].  So:
+    #   x: 0.5 * 1.0 = 0.5  (only in a, normalized to max)
+    #   y: 0.5 * 0.0 + 0.5 * 1.0 = 0.5  (min in a, max in b)
+    #   z: 0.5 * 0.0 = 0.0  (min in b)
     a = [_r("x", 0.8), _r("y", 0.4)]
     b = [_r("y", 1.0), _r("z", 0.5)]
     fused = fuse_results([a, b], weights=[0.5, 0.5], method=FusionMethod.WEIGHTED, top_k=3)
     scores = {r.chunk_id: r.score for r in fused}
-    assert scores["y"] == pytest.approx(0.5 * 0.4 + 0.5 * 1.0)
-    assert scores["x"] == pytest.approx(0.4)
-    assert scores["z"] == pytest.approx(0.25)
-    assert fused[0].chunk_id == "y"
+    assert scores["x"] == pytest.approx(0.5)
+    assert scores["y"] == pytest.approx(0.5)
+    assert scores["z"] == pytest.approx(0.0)
+    # x and y tie at 0.5; z is last.
+    assert scores["z"] < scores["x"]
+
+
+def test_weighted_fusion_normalizes_per_retriever() -> None:
+    # Verify that min-max normalization makes different-scale retrievers
+    # contribute proportionally.  Retriever A has scores [0.9, 0.1] (wide
+    # spread), B has [0.51, 0.49] (narrow spread).  Without normalization B's
+    # scores would be dwarfed by A's; with normalization both contribute
+    # equally per rank position.
+    a = [_r("x", 0.9), _r("y", 0.1)]
+    b = [_r("x", 0.51), _r("y", 0.49)]
+    fused = fuse_results([a, b], weights=[0.5, 0.5], method=FusionMethod.WEIGHTED, top_k=2)
+    scores = {r.chunk_id: r.score for r in fused}
+    # Both retrievers rank x first (normalized to 1.0) and y second (0.0).
+    assert scores["x"] == pytest.approx(1.0)
+    assert scores["y"] == pytest.approx(0.0)
 
 
 def test_weighted_fusion_clamps_negative_scores() -> None:
+    # A single negative score: min-max normalization maps it to 1.0 (it's the
+    # only score, so it's both min and max — all-equal case gives 1.0).
     fused = fuse_results([[_r("x", -0.5)]], method=FusionMethod.WEIGHTED, top_k=1)
-    assert fused[0].score == 0.0
+    assert fused[0].score == pytest.approx(1.0)
 
 
 def test_rrf_rewards_consensus() -> None:

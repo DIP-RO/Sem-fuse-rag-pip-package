@@ -37,9 +37,61 @@ def test_build_prompt_contains_question_and_rules() -> None:
 
 def test_template_provider_extracts_top_passage() -> None:
     provider = TemplateLLMProvider()
+    # "What is X?" with passage "X is Y." -> extracts predicate "Y"
     prompt = build_rag_prompt("What is X?", [_r("a", "X is Y."), _r("b", "Other.")])
-    assert provider.generate(prompt) == "X is Y. [1]"
+    result = provider.generate(prompt)
+    assert result.endswith("[1]")
+    assert "Y" in result
     assert provider.model_name == "template-extractive"
+
+
+def test_template_provider_extracts_subject_for_capital_question() -> None:
+    provider = TemplateLLMProvider()
+    # "What is the capital?" with "Dhaka is the capital of Bangladesh."
+    # -> extracts subject "Dhaka" (the thing that IS the capital)
+    prompt = build_rag_prompt(
+        "What is the capital of Bangladesh?",
+        [_r("a", "Dhaka is the capital of Bangladesh.")],
+    )
+    assert provider.generate(prompt) == "Dhaka [1]"
+
+
+def test_template_provider_bangla_extraction() -> None:
+    provider = TemplateLLMProvider()
+    prompt = build_rag_prompt(
+        "বাংলাদেশের রাজধানী কী?",
+        [_r("a", "ঢাকা বাংলাদেশের রাজধানী।")],
+    )
+    assert provider.generate(prompt) == "ঢাকা [1]"
+
+
+def test_template_provider_banglish_extraction() -> None:
+    provider = TemplateLLMProvider()
+    prompt = build_rag_prompt(
+        "Bangladesh er capital ki?",
+        [_r("a", "ঢাকা বাংলাদেশের রাজধানী।")],
+    )
+    assert provider.generate(prompt) == "ঢাকা [1]"
+
+
+def test_template_provider_where_extraction() -> None:
+    provider = TemplateLLMProvider()
+    prompt = build_rag_prompt(
+        "Where is the Eiffel Tower?",
+        [_r("a", "The Eiffel Tower is in Paris.")],
+    )
+    assert provider.generate(prompt) == "Paris [1]"
+
+
+def test_template_provider_when_extraction_bangla() -> None:
+    provider = TemplateLLMProvider()
+    prompt = build_rag_prompt(
+        "bhorti porikkha kokhon hobe?",
+        [_r("a", "বিশ্ববিদ্যালয়ে ভর্তি পরীক্ষা ডিসেম্বরে অনুষ্ঠিত হবে।")],
+    )
+    result = provider.generate(prompt)
+    assert "ডিসেম্বরে" in result
+    assert result.endswith("[1]")
 
 
 def test_pipeline_returns_citations() -> None:
@@ -47,7 +99,7 @@ def test_pipeline_returns_citations() -> None:
     pipeline = RAGPipeline(retrieve=lambda q: results, llm=TemplateLLMProvider())
     response = pipeline.ask("capital?")
     assert isinstance(response, RAGResponse)
-    assert response.answer == "Dhaka is the capital. [1]"
+    assert response.answer.endswith("[1]")
     assert [c.document_id for c in response.citations] == ["a", "b"]
     assert "Dhaka is the capital." in response.prompt
     assert response.model == "template-extractive"

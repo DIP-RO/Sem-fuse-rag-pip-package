@@ -57,8 +57,19 @@ def test_transliterate_known_tokens() -> None:
     assert "এর" in result
     assert "রাজধানী" in result
     assert "কোথায়" in result
-    # Unknown tokens (English/proper nouns) pass through.
-    assert "bangladesh" in result.lower()
+    # "bangladesh" is now in the transliteration lexicon -> বাংলাদেশ.
+    assert "বাংলাদেশ" in result
+
+
+def test_transliterate_unknown_tokens_pass_through() -> None:
+    norm = BanglishNormalizer()
+    result = norm.transliterate("admission process er jonno")
+    # "admission" and "process" are English words not in the lexicon.
+    assert "admission" in result.lower()
+    assert "process" in result.lower()
+    # "er" and "jonno" are in the lexicon.
+    assert "এর" in result
+    assert "জন্য" in result
 
 
 def test_normalize_for_search_banglish_only() -> None:

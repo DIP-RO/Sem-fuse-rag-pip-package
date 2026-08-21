@@ -9,6 +9,13 @@ Persistence layout under ``storage_path``::
 
 The store deduplicates chunks by ``content_hash``: adding a chunk whose hash
 already exists is a no-op.
+
+Performance notes:
+  * Vectors are stored in a pre-allocated growable buffer (capacity doubles
+    when exhausted), so ``add`` / ``add_many`` are amortized O(1) per chunk
+    instead of O(n) per ``np.vstack``.
+  * Search uses ``np.argpartition`` (O(n) average) to isolate the top-k
+    candidates, then sorts only those k (O(k log k)) — not a full sort.
 """
 
 from __future__ import annotations
@@ -30,6 +37,10 @@ logger = get_logger(__name__)
 _VECTORS_FILE = "vectors.npy"
 _CHUNKS_FILE = "chunks.json"
 _INDEX_INFO_FILE = "index_info.json"
+
+# Initial buffer capacity and growth factor for the vector matrix.
+_INITIAL_CAPACITY = 64
+_GROWTH_FACTOR = 2
 
 
 def _chunk_to_record(chunk: DocumentChunk) -> dict[str, Any]:
@@ -81,7 +92,10 @@ class LocalVectorStore:
         self._metric = metric
         self._collection = collection
 
-        self._vectors: np.ndarray = np.zeros((0, embedding_dimension), dtype=np.float32)
+        # Growable buffer: _buf has capacity >= _count; only [:_count] is valid.
+        self._capacity = _INITIAL_CAPACITY
+        self._buf = np.zeros((_INITIAL_CAPACITY, embedding_dimension), dtype=np.float32)
+        self._count = 0
         self._chunks: list[DocumentChunk] = []
         self._hash_to_idx: dict[str, int] = {}
         self._index_info: IndexInfo = IndexInfo(
@@ -96,6 +110,23 @@ class LocalVectorStore:
     @property
     def storage_path(self) -> Path:
         return self._storage_path
+
+    @property
+    def _vectors(self) -> np.ndarray:
+        """View of the valid portion of the buffer (shape (count, dim))."""
+        return self._buf[: self._count]
+
+    def _ensure_capacity(self, needed: int) -> None:
+        """Grow the buffer if ``needed`` rows won't fit."""
+        if needed <= self._capacity:
+            return
+        new_cap = self._capacity
+        while new_cap < needed:
+            new_cap *= _GROWTH_FACTOR
+        new_buf = np.zeros((new_cap, self._embedding_dimension), dtype=np.float32)
+        new_buf[: self._count] = self._buf[: self._count]
+        self._buf = new_buf
+        self._capacity = new_cap
 
     def _score(self, query: np.ndarray, matrix: np.ndarray) -> np.ndarray:
         if matrix.shape[0] == 0:
@@ -132,8 +163,10 @@ class LocalVectorStore:
                 f"Vector dimension {vec.shape[0]} != store dimension "
                 f"{self._embedding_dimension}."
             )
-        self._vectors = np.vstack([self._vectors, vec[None, :]]) if self._vectors.size else vec[None, :]
-        idx = len(self._chunks)
+        self._ensure_capacity(self._count + 1)
+        self._buf[self._count] = vec
+        idx = self._count
+        self._count += 1
         self._chunks.append(chunk)
         if chunk.content_hash:
             self._hash_to_idx[chunk.content_hash] = idx
@@ -142,30 +175,66 @@ class LocalVectorStore:
     def add_many(self, chunks: list[DocumentChunk], vectors: np.ndarray) -> int:
         if len(chunks) != vectors.shape[0]:
             raise VectorStoreError("chunks and vectors length mismatch")
-        added = 0
+        # First pass: filter out duplicates (both existing and within-batch).
+        new_chunks: list[DocumentChunk] = []
+        new_vecs: list[np.ndarray] = []
+        seen_hashes: set[str] = set()
         for chunk, vec in zip(chunks, vectors, strict=True):
-            if self.add(chunk, vec):
-                added += 1
-        return added
+            if chunk.content_hash:
+                if chunk.content_hash in self._hash_to_idx or chunk.content_hash in seen_hashes:
+                    logger.debug("Skipping duplicate chunk (hash=%s).", chunk.content_hash[:12])
+                    continue
+                seen_hashes.add(chunk.content_hash)
+            v = np.asarray(vec, dtype=np.float32).reshape(-1)
+            if v.shape[0] != self._embedding_dimension:
+                raise VectorStoreError(
+                    f"Vector dimension {v.shape[0]} != store dimension "
+                    f"{self._embedding_dimension}."
+                )
+            new_chunks.append(chunk)
+            new_vecs.append(v)
+        if not new_chunks:
+            return 0
+        # Batch-allocate and copy in one shot.
+        self._ensure_capacity(self._count + len(new_chunks))
+        for i, v in enumerate(new_vecs):
+            self._buf[self._count + i] = v
+        for i, chunk in enumerate(new_chunks):
+            idx = self._count + i
+            self._chunks.append(chunk)
+            if chunk.content_hash:
+                self._hash_to_idx[chunk.content_hash] = idx
+        self._count += len(new_chunks)
+        return len(new_chunks)
 
     def delete(self, chunk_id: str) -> None:
-        # Rebuild without the target chunk (simple, correct, fine for V1 sizes).
-        keep = [(c, v) for c, v in zip(self._chunks, self._vectors, strict=True) if c.chunk_id != chunk_id]
-        if len(keep) == len(self._chunks):
+        # Find and remove the chunk, then compact the buffer.
+        target_idx = None
+        for i, c in enumerate(self._chunks):
+            if c.chunk_id == chunk_id:
+                target_idx = i
+                break
+        if target_idx is None:
             return
-        self._chunks = [c for c, _ in keep]
-        self._vectors = (
-            np.vstack([v for _, v in keep]) if keep else np.zeros((0, self._embedding_dimension), dtype=np.float32)
-        )
-        self._hash_to_idx = {c.content_hash: i for i, c in enumerate(self._chunks) if c.content_hash}
+        # Shift remaining vectors down by one.
+        if target_idx < self._count - 1:
+            self._buf[target_idx : self._count - 1] = self._buf[target_idx + 1 : self._count]
+        self._count -= 1
+        self._chunks.pop(target_idx)
+        # Rebuild hash index (indices shifted).
+        self._hash_to_idx = {
+            c.content_hash: i for i, c in enumerate(self._chunks) if c.content_hash
+        }
 
     def clear(self) -> None:
-        self._vectors = np.zeros((0, self._embedding_dimension), dtype=np.float32)
+        self._capacity = _INITIAL_CAPACITY
+        self._buf = np.zeros((_INITIAL_CAPACITY, self._embedding_dimension), dtype=np.float32)
+        self._count = 0
         self._chunks = []
         self._hash_to_idx = {}
 
     def count(self) -> int:
-        return len(self._chunks)
+        return self._count
 
     def chunks(self) -> list[DocumentChunk]:
         """All stored chunks, in insertion order (copy of the internal list)."""
@@ -178,30 +247,63 @@ class LocalVectorStore:
         top_k: int,
         filter: dict[str, object] | None = None,
     ) -> list[SearchResult]:
-        if self.count() == 0:
+        if self._count == 0:
             return []
-        scores = self._score(np.asarray(query_vector, dtype=np.float32), self._vectors)
+        matrix = self._vectors
+        scores = self._score(np.asarray(query_vector, dtype=np.float32), matrix)
+
+        if filter:
+            # With a filter we can't use argpartition directly — we may need to
+            # scan past non-matching candidates.  Over-fetch partitions and then
+            # walk sorted order until we have enough matching results.
+            return self._search_filtered(scores, top_k, dict(filter))
+
+        # No filter: use argpartition for O(n) top-k selection.
+        k = min(top_k, self._count)
+        if k <= 0:
+            return []
+        if k == 1:
+            best = int(np.argmax(scores))
+            top_indices: list[int] = [best]
+        else:
+            # argpartition puts the k largest at the front (unordered).
+            part = np.argpartition(-scores, k - 1)[:k]
+            # Sort just the k candidates by score descending.
+            sorted_part = part[np.argsort(-scores[part])]
+            top_indices = [int(i) for i in sorted_part]
+
+        return [
+            self._make_result(idx, float(scores[idx]))
+            for idx in top_indices
+        ]
+
+    def _search_filtered(
+        self, scores: np.ndarray, top_k: int, filter: dict[str, Any]
+    ) -> list[SearchResult]:
+        """Search with metadata filter — full sort then walk until enough match."""
         order = np.argsort(-scores)
         results: list[SearchResult] = []
         for idx in order:
             chunk = self._chunks[idx]
-            if filter and not self._matches_filter(chunk.metadata, dict(filter)):
+            if not self._matches_filter(chunk.metadata, filter):
                 continue
-            results.append(
-                SearchResult(
-                    text=chunk.text,
-                    score=float(scores[idx]),
-                    document_id=chunk.document_id,
-                    chunk_id=chunk.chunk_id,
-                    metadata=dict(chunk.metadata),
-                    language=chunk.language,
-                    source=chunk.source,
-                    page=chunk.page,
-                )
-            )
+            results.append(self._make_result(int(idx), float(scores[idx])))
             if len(results) >= top_k:
                 break
         return results
+
+    def _make_result(self, idx: int, score: float) -> SearchResult:
+        chunk = self._chunks[idx]
+        return SearchResult(
+            text=chunk.text,
+            score=score,
+            document_id=chunk.document_id,
+            chunk_id=chunk.chunk_id,
+            metadata=dict(chunk.metadata),
+            language=chunk.language,
+            source=chunk.source,
+            page=chunk.page,
+        )
 
     # ------------------------------------------------------------------ persist
     def index_info(self) -> IndexInfo:
@@ -212,6 +314,7 @@ class LocalVectorStore:
 
     def persist(self) -> None:
         self._storage_path.mkdir(parents=True, exist_ok=True)
+        # Save only the valid portion, not the full buffer.
         np.save(self._storage_path / _VECTORS_FILE, self._vectors)
         dump_json([_chunk_to_record(c) for c in self._chunks], self._storage_path / _CHUNKS_FILE)
         dump_json(
@@ -225,7 +328,7 @@ class LocalVectorStore:
             },
             self._index_info_path(),
         )
-        logger.debug("Persisted store (%d chunks) to %s.", self.count(), self._storage_path)
+        logger.debug("Persisted store (%d chunks) to %s.", self._count, self._storage_path)
 
     def load(self) -> None:
         info_path = self._index_info_path()
@@ -246,14 +349,21 @@ class LocalVectorStore:
 
         vectors_path = self._storage_path / _VECTORS_FILE
         if vectors_path.exists():
-            self._vectors = np.load(vectors_path).astype(np.float32)
+            loaded = np.load(vectors_path).astype(np.float32)
+            self._count = loaded.shape[0]
+            self._capacity = max(_INITIAL_CAPACITY, self._count)
+            self._buf = np.zeros((self._capacity, self._embedding_dimension), dtype=np.float32)
+            if self._count > 0:
+                self._buf[: self._count] = loaded
         else:
-            self._vectors = np.zeros((0, self._embedding_dimension), dtype=np.float32)
+            self._count = 0
+            self._capacity = _INITIAL_CAPACITY
+            self._buf = np.zeros((_INITIAL_CAPACITY, self._embedding_dimension), dtype=np.float32)
 
         chunks_raw = load_json(self._storage_path / _CHUNKS_FILE)
         self._chunks = [_record_to_chunk(r) for r in chunks_raw]
         self._hash_to_idx = {c.content_hash: i for i, c in enumerate(self._chunks) if c.content_hash}
-        logger.info("Loaded store (%d chunks) from %s.", self.count(), self._storage_path)
+        logger.info("Loaded store (%d chunks) from %s.", self._count, self._storage_path)
 
     def _check_compatible(self, loaded: IndexInfo) -> None:
         if (

@@ -4,6 +4,72 @@ All notable changes to SemFuse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-08-22
+
+### Fixed — Bangla RAG answer quality
+
+- The extractive `TemplateLLMProvider` now produces **concise extracted
+  answers** instead of echoing the full passage. For example,
+  `ask("বাংলাদেশের রাজধানী কী?")` returns `"ঢাকা [1]"` instead of the full
+  `"ঢাকা বাংলাদেশের রাজধানী। [1]"`.
+- Question-aware extraction handles Bangla (`কী`, `কি`, `কোথায়`, `কখন`),
+  English (`what`, `where`, `when`, `who`, `how`, `why`), and Banglish
+  (`ki`, `kothay`, `kokhon`, `keno`, `kivabe`) question markers.
+- Pattern-based answer span extraction: "X is Y" → extract subject or
+  predicate based on question type; Bangla genitive `ের` suffix handling;
+  date/time extraction for "when" questions.
+
+### Optimized — Vector store
+
+- Replaced O(n²) `np.vstack`-per-add with a **pre-allocated growable buffer**
+  (capacity doubles when exhausted). `add` / `add_many` are now amortized
+  O(1) per chunk.
+- Search uses `np.argpartition` (O(n) average) for top-k selection instead
+  of full `np.argsort` (O(n log n)). Only the k candidates are sorted.
+- `add_many` now does within-batch deduplication (not just against existing
+  chunks), so adding duplicate texts in a single batch is correctly deduped.
+- `delete` uses index shifting instead of rebuilding the entire matrix.
+
+### Optimized — BM25 keyword retrieval
+
+- Replaced full-corpus scan with an **inverted index** (`term → list of
+  (doc_idx, tf)` postings). Scoring now only touches documents that contain
+  at least one query term — O(sum of postings list lengths) instead of
+  O(n × |query_terms|).
+
+### Fixed — Hybrid fusion score normalization
+
+- Weighted fusion now **min-max normalizes each retriever's scores** before
+  applying weights. This fixes the issue where semantic scores (cosine,
+  typically 0.5–1.0) and keyword scores (BM25 normalized, 0.0–1.0) had
+  different distributions, causing one retriever to dominate the fusion.
+
+### Improved — Banglish lexicon
+
+- Expanded the marker lexicon from ~100 to ~180 words: added common verbs
+  (`dekbo`, `pabo`, `bujhi`, `parbo`, `thakbe`), nouns (`shikkha`,
+  `bidyaloy`, `sorkar`, `shastho`, `krishi`), places (`dhaka`,
+  `chittagong`, `sylhet`, `coxsbazar`), numbers (`ek` through `dosh`),
+  and more function words.
+- Expanded transliteration dictionary from ~60 to ~150 entries, including
+  all new markers plus place names, common nouns, and question words.
+- Added Banglish question markers to the RAG template provider for
+  Banglish-aware answer extraction.
+
+### Added — Real-world test suite
+
+- 15-document real-world corpus spanning Bangla, English, and mixed text
+  across geography, education, history, culture, economy, and health topics.
+- 10 cross-language retrieval tests (Bangla→Bangla, English→English,
+  Banglish→Bangla, mixed).
+- 6 RAG answer quality tests verifying concise extracted answers.
+- Search mode correctness tests (semantic, keyword, hybrid).
+- Reranking, metadata filtering, and explain diagnostics tests.
+- Edge case tests: empty index, Unicode (ZWJ/ZWNJ/BOM), long documents,
+  vector store buffer growth, delete compaction, persist/reload, score
+  properties, top_k limits.
+- Total: **215 tests** (up from 153), all passing.
+
 ## [0.2.0] — 2026-08-21
 
 ### Added — Phase 2 (Language & Banglish normalization)

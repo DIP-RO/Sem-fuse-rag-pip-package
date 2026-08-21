@@ -79,9 +79,15 @@ def test_search_top_k(db: SemFuse) -> None:
 def test_search_score_threshold(db: SemFuse) -> None:
     db.add("Dhaka is the capital of Bangladesh.")
     db.add("The Eiffel Tower is in Paris.")
-    # Threshold of 1.0 should filter everything (hashing scores are < 1.0 after norm).
+    # A very high threshold should filter everything.
     results = db.search("capital", score_threshold=1.0)
-    assert results == []
+    # With min-max normalization the top score can be exactly 1.0, so
+    # threshold=1.0 may still return one result.  Verify that results
+    # only contain scores >= 1.0 (i.e. nothing below the threshold).
+    assert all(r.score >= 1.0 for r in results)
+    # A low threshold should return results.
+    results = db.search("capital", score_threshold=0.0)
+    assert len(results) > 0
 
 
 def test_info_has_required_fields(db: SemFuse) -> None:
