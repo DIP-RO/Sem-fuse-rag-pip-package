@@ -98,6 +98,8 @@ class LocalVectorStore:
         self._count = 0
         self._chunks: list[DocumentChunk] = []
         self._hash_to_idx: dict[str, int] = {}
+        # Cached norms for cosine similarity — invalidated on add/load.
+        self._norms_cache: np.ndarray | None = None
         self._index_info: IndexInfo = IndexInfo(
             embedding_model=embedding_model,
             embedding_dimension=embedding_dimension,
@@ -127,14 +129,18 @@ class LocalVectorStore:
         new_buf[: self._count] = self._buf[: self._count]
         self._buf = new_buf
         self._capacity = new_cap
+        # Norms cache is invalid after buffer reallocation.
+        self._norms_cache = None
 
     def _score(self, query: np.ndarray, matrix: np.ndarray) -> np.ndarray:
         if matrix.shape[0] == 0:
             return np.zeros((0,), dtype=np.float32)
         if self._metric == SimilarityMetric.COSINE:
             q = query / (np.linalg.norm(query) + 1e-12)
-            norms = np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-12
-            m = matrix / norms
+            # Use cached norms if available — avoids recomputing on every search.
+            if self._norms_cache is None or self._norms_cache.shape[0] != matrix.shape[0]:
+                self._norms_cache = np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-12
+            m = matrix / self._norms_cache
             return m @ q
         if self._metric == SimilarityMetric.DOT:
             return matrix @ query
@@ -170,6 +176,7 @@ class LocalVectorStore:
         self._chunks.append(chunk)
         if chunk.content_hash:
             self._hash_to_idx[chunk.content_hash] = idx
+        self._norms_cache = None
         return True
 
     def add_many(self, chunks: list[DocumentChunk], vectors: np.ndarray) -> int:
@@ -205,6 +212,7 @@ class LocalVectorStore:
             if chunk.content_hash:
                 self._hash_to_idx[chunk.content_hash] = idx
         self._count += len(new_chunks)
+        self._norms_cache = None
         return len(new_chunks)
 
     def delete(self, chunk_id: str) -> None:
@@ -232,6 +240,7 @@ class LocalVectorStore:
         self._count = 0
         self._chunks = []
         self._hash_to_idx = {}
+        self._norms_cache = None
 
     def count(self) -> int:
         return self._count
@@ -363,6 +372,7 @@ class LocalVectorStore:
         chunks_raw = load_json(self._storage_path / _CHUNKS_FILE)
         self._chunks = [_record_to_chunk(r) for r in chunks_raw]
         self._hash_to_idx = {c.content_hash: i for i, c in enumerate(self._chunks) if c.content_hash}
+        self._norms_cache = None
         logger.info("Loaded store (%d chunks) from %s.", self._count, self._storage_path)
 
     def _check_compatible(self, loaded: IndexInfo) -> None:

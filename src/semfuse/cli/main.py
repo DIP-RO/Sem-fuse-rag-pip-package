@@ -22,6 +22,21 @@ from semfuse.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _ensure_utf8_stdout() -> None:
+    """Force UTF-8 on stdout/stderr so Bangla/Unicode renders correctly.
+
+    On Windows the default encoding is often cp1252 or similar, which drops
+    Bangla vowel signs (া, ে, ী) silently. We reconfigure stdout to UTF-8
+    so all Unicode text prints correctly on every platform.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def _make_db(args: argparse.Namespace) -> SemFuse:
     kwargs: dict[str, object] = {
         "storage_path": args.storage,
@@ -143,6 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    _ensure_utf8_stdout()
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

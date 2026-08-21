@@ -4,6 +4,48 @@ All notable changes to SemFuse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] — 2026-08-22
+
+### Improved — CPU performance (no GPU needed)
+
+Major optimization of the hashing embedding provider and vector store:
+
+| Operation | Before | After | Speedup |
+|-----------|--------|-------|---------|
+| Add 500 docs | 8,603 ms | 22 ms | **390x** |
+| Semantic search | 9.6 ms | 0.04 ms | **240x** |
+| Hybrid search | 10.9 ms | 0.2 ms | **55x** |
+
+Optimizations:
+- **zlib.crc32 instead of hashlib.md5** for n-gram hashing (~10x faster per hash)
+- **Preallocated matrix** in `embed_documents` (no `np.vstack` loop overhead)
+- **Cached norms** in vector store — `np.linalg.norm(matrix)` computed once,
+  invalidated on add/load/clear, not recomputed every search
+- **In-place embedding** — `_embed_one_into` fills preallocated arrays
+
+### Fixed — Bangla text display in CLI
+
+The CLI output `ঢক বলদশর রজধন।` (missing vowel signs) was caused by terminal
+encoding, not data corruption. The stored text is always correct UTF-8.
+
+Fix: `_ensure_utf8_stdout()` in the CLI reconfigures stdout/stderr to UTF-8
+on startup. This fixes Bangla rendering on:
+- Windows (cp1252 default)
+- Older Linux terminals (LATIN-1 default)
+- Any environment where the terminal encoding is not UTF-8
+
+### Improved — Docker cross-platform compatibility
+
+- `PYTHONUTF8=1` + `PYTHONIOENCODING=utf-8` + `LANG=C.UTF-8` env vars
+  ensure Bangla renders correctly on all platforms (Linux, Windows containers)
+- `git` added to apt deps (needed by some pip source installs)
+- Comments clarify the multi-arch build (amd64 + arm64)
+
+### Tests: 272 total (all passing)
+
+- ruff clean, mypy clean (60 source files)
+- CI green on Python 3.10–3.13
+
 ## [0.7.0] — 2026-08-22
 
 ### Changed — SLM backend: llama-cpp-python instead of torch (~450 MB, not ~2.5 GB)
