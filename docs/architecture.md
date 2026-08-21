@@ -51,7 +51,7 @@ simple path.
              Optional RAG  ->  LLM
 ```
 
-## Module map (Phase 1 scope highlighted)
+## Module map (all phases implemented)
 
 | Layer | Module | Phase |
 |-------|--------|-------|
@@ -63,22 +63,30 @@ simple path.
 | Embeddings | `embeddings.base`, `embeddings.local`, `embeddings.hashing`, `embeddings.factory` | 1 |
 | Vector stores | `vectorstores.base`, `vectorstores.local` | 1 |
 | Retrieval | `retrieval.base`, `retrieval.semantic` | 1 |
-| Language | `language.*` | 2 |
-| Chunking | `chunking.*` | 3 |
-| Loaders | `loaders.*` | 3 |
+| Language | `language.base`, `language.detector`, `language.normalizer`, `language.banglish` | 2 |
+| Chunking | `chunking.base`, `chunking.recursive` | 3 |
+| Loaders | `loaders.base`, `loaders.text`, `loaders.pdf`, `loaders.docx`, `loaders.factory` | 3 |
 | Keyword/Hybrid | `retrieval.keyword`, `retrieval.hybrid`, `retrieval.fusion` | 4 |
-| Reranking | `reranking.*` | 5 |
-| RAG | `rag.*` | 6 |
-| Evaluation | `evaluation.*` | 7 |
-| CLI | `cli.main` | 8 |
+| Reranking | `reranking.base`, `reranking.lexical`, `reranking.cross_encoder`, `reranking.factory` | 5 |
+| RAG | `rag.base`, `rag.prompt`, `rag.template`, `rag.openai_provider`, `rag.pipeline`, `rag.factory` | 6 |
+| Evaluation | `evaluation.metrics`, `evaluation.runner`, `evaluation.banglish` | 7 |
+| CLI | `cli.main` (`info`/`index`/`search`/`ask`) | 8 |
 
 ## Key abstractions (Protocols)
 
 - `EmbeddingProvider` — `embed_documents`, `embed_query`, `dimension`, `model_name`
-- `VectorStore` — `add`, `add_many`, `search`, `delete`, `clear`, `count`, `persist`, `load`
+- `VectorStore` — `add`, `add_many`, `search`, `delete`, `clear`, `count`, `chunks`, `persist`, `load`
 - `Retriever` — `retrieve(query, top_k, filter) -> list[SearchResult]`
-- (later) `TextChunker`, `DocumentLoader`, `LanguageDetector`, `TextNormalizer`,
-  `BanglishNormalizer`, `Reranker`, `LLMProvider`
+  (implementations: `SemanticRetriever`, `KeywordRetriever` (BM25),
+  `HybridRetriever` (fused))
+- `TextChunker` — `split(text) -> list[str]` (`RecursiveCharacterChunker`)
+- `DocumentLoader` — `load(path) -> list[Document]` (TXT/MD, PDF, DOCX)
+- `LanguageDetector`, `TextNormalizer` — language layer; `BanglishNormalizer`
+  canonicalizes and transliterates romanized Bangla (see `docs/banglish.md`)
+- `Reranker` — `rerank(query, results, top_k)` (`LexicalReranker`,
+  `CrossEncoderReranker`)
+- `LLMProvider` — `generate(prompt)` (`TemplateLLMProvider`,
+  `OpenAILLMProvider`)
 
 ## Dependency strategy
 

@@ -22,13 +22,14 @@ from semfuse.core.types import (
     CollectionInfo,
     Document,
     DocumentChunk,
-    IndexInfo,
+    RAGResponse,
     SearchResult,
 )
 
 __all__ = [
     "SemFuse",
     "SemFuseConfig",
+    "__version__",
     "Language",
     "SearchMode",
     "SimilarityMetric",
@@ -47,7 +48,6 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "SearchResult",
-    "IndexInfo",
     "CollectionInfo",
-    "__version__",
+    "RAGResponse",
 ]

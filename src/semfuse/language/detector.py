@@ -1,8 +1,8 @@
 """Language detection.
 
-Phase 1 implements a lightweight heuristic detector covering English, Bangla,
-and Unknown. Banglish / Mixed detection is expanded in Phase 2, but the public
-``detect_language`` interface is stable from the start.
+A lightweight heuristic detector covering English, Bangla, Banglish (romanized
+Bangla), and Mixed text. The public ``detect_language`` interface is stable;
+Phase 2 added Banglish/Mixed refinement on top of the Phase 1 script heuristic.
 """
 
 from __future__ import annotations
@@ -10,18 +10,21 @@ from __future__ import annotations
 import re
 
 from semfuse.core.enums import Language
+from semfuse.language.banglish import looks_banglish
 
-_BANGLA_RANGE = re.compile(r"[\u0980-\u09FF]")
+_BANGLA_RANGE = re.compile(r"[ঀ-৿]")
 _LATIN_WORD = re.compile(r"[A-Za-z]+")
 
 
 def detect_language(text: str) -> Language:
     """Detect the language category of ``text``.
 
-    Heuristic (Phase 1):
-      * contains Bangla script chars  -> ``bn`` (unless substantial Latin too -> mixed)
-      * only Latin script              -> ``en`` (Banglish refinement in Phase 2)
-      * empty / no recognizable script -> ``unknown``
+    Heuristic:
+      * Bangla script + Latin words          -> ``mixed``
+      * Bangla script only                   -> ``bn``
+      * Latin only, Banglish marker words    -> ``banglish``
+      * Latin only otherwise                 -> ``en``
+      * empty / no recognizable script       -> ``unknown``
     """
     if not text or not text.strip():
         return Language.UNKNOWN
@@ -29,10 +32,16 @@ def detect_language(text: str) -> Language:
     latin_words = _LATIN_WORD.findall(text)
     has_latin = len(latin_words) > 0
     if has_bangla and has_latin:
-        # Refined mixed/banglish classification arrives in Phase 2.
         return Language.MIXED
     if has_bangla:
         return Language.BN
     if has_latin:
-        return Language.EN
+        return Language.BANGLISH if looks_banglish(text) else Language.EN
     return Language.UNKNOWN
+
+
+class HeuristicLanguageDetector:
+    """Protocol-compatible wrapper around :func:`detect_language`."""
+
+    def detect(self, text: str) -> Language:
+        return detect_language(text)

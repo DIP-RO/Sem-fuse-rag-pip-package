@@ -167,6 +167,10 @@ class LocalVectorStore:
     def count(self) -> int:
         return len(self._chunks)
 
+    def chunks(self) -> list[DocumentChunk]:
+        """All stored chunks, in insertion order (copy of the internal list)."""
+        return list(self._chunks)
+
     # ------------------------------------------------------------------ search
     def search(
         self,

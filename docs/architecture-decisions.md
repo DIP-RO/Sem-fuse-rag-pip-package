@@ -74,3 +74,54 @@ Each entry follows: **Decision · Context · Choice · Alternatives · Reason**.
 - **Choice:** Explicit version check with a clear remediation message.
 - **Alternatives:** Silent re-embed — slow and surprising.
 - **Reason:** Correctness over convenience; clear errors over silent corruption.
+
+## ADR-0007 — Lexicon-based Banglish normalization (no ML transliterator)
+
+- **Decision:** Banglish handling uses curated lexicons: a marker set for
+  detection, a variant-folding table, and a token→Bangla transliteration table.
+- **Context:** Banglish has no standard orthography; a full ML transliterator
+  would add a heavy dependency and non-determinism for modest gain at this
+  corpus scale.
+- **Choice:** Deterministic, dependency-free token mapping applied only to text
+  detected as Banglish; unknown tokens (English words, proper nouns) pass
+  through unchanged.
+- **Alternatives:** (a) ML transliteration model — heavy, non-deterministic.
+  (b) Rely on the multilingual embedding model alone — keyword retrieval can
+  never bridge scripts, and Banglish embedding quality is mediocre.
+- **Reason:** Deterministic, testable, offline; the built-in Banglish benchmark
+  demonstrates the gain even under the hashing provider. Lexicons are plain
+  data and easy to grow.
+
+## ADR-0008 — Hybrid = BM25 + semantic with weighted fusion default
+
+- **Decision:** `auto` search mode resolves to hybrid retrieval: BM25 over
+  normalized chunk text fused with semantic similarity. Default fusion is
+  `weighted` (0.7 semantic / 0.3 keyword); `rrf` is available via config.
+- **Context:** Semantic-only retrieval misses exact identifiers and rare
+  terms; keyword-only cannot generalize. Fused scores must stay meaningful
+  against the user-facing `score_threshold` in [0, 1].
+- **Choice:** BM25 scores are normalized against the query's *ideal* score
+  (every term matched at saturation), so stopword-only matches score near zero
+  instead of being inflated to 1.0; fused by weighted sum. RRF (rank-based,
+  rescaled to [0, 1]) is offered for corpora where score scales are unreliable.
+- **Alternatives:** RRF as default — robust but discards score magnitude,
+  making `score_threshold` semantics opaque (a consensus top hit is always
+  exactly 1.0).
+- **Reason:** Weighted fusion preserves interpretable scores on the default
+  path; on queries with no keyword overlap it degrades gracefully to
+  semantic-only ranking.
+
+## ADR-0009 — Default RAG provider is extractive ("template"), not an API
+
+- **Decision:** `db.ask()` works out of the box using a deterministic
+  extractive provider that returns the top passage with its citation; OpenAI
+  generation is an optional extra (`semfuse[rag]`, `llm_provider="openai"`).
+- **Context:** Zero-config is a core promise; an API-backed default would
+  require keys/network and make tests non-deterministic.
+- **Choice:** `TemplateLLMProvider` implements the same `LLMProvider` protocol
+  as real backends, so the full RAG pipeline (retrieve → prompt with numbered
+  citations → generate) is exercised offline.
+- **Alternatives:** (a) Raise unless an API key is configured — breaks
+  zero-config. (b) Bundle a local generative model — far too heavy for core.
+- **Reason:** Honest capability tiering: citations and retrieval quality work
+  offline; generation quality scales up when the user opts into an LLM.

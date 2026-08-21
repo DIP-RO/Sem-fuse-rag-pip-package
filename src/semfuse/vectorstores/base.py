@@ -40,6 +40,9 @@ class VectorStore(Protocol):
 
     def count(self) -> int:
         """Number of stored chunks."""
+
+    def chunks(self) -> list[DocumentChunk]:
+        """All stored chunks, in insertion order."""
         ...
 
     def persist(self) -> None:

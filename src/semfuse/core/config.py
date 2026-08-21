@@ -5,11 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from semfuse.core.enums import SearchMode, SimilarityMetric
+from semfuse.core.enums import FusionMethod, SearchMode, SimilarityMetric
 
 # Centralized defaults — change here, not scattered through the codebase.
 DEFAULT_EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 DEFAULT_EMBEDDING_DIMENSION = 384
+DEFAULT_RERANKER_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+DEFAULT_LLM_MODEL = "gpt-4o-mini"
 EMBEDDING_VERSION = "1"
 INDEX_VERSION = "1"
 DEFAULT_STORAGE_DIR = ".semfuse"
@@ -36,6 +38,21 @@ class SemFuseConfig:
     score_threshold: float = 0.0
     chunk_size: int = 500
     chunk_overlap: int = 50
+    # Hybrid retrieval: fusion method and per-retriever weights (semantic, keyword).
+    # WEIGHTED keeps fused scores comparable to score_threshold; RRF is rank-based.
+    fusion_method: FusionMethod = FusionMethod.WEIGHTED
+    semantic_weight: float = 0.7
+    keyword_weight: float = 0.3
+    # Reranker key: None (off), "lexical" (offline), "cross-encoder" (model-based).
+    reranker: str | None = None
+    reranker_model: str = DEFAULT_RERANKER_MODEL
+    # Candidates fetched for reranking before cutting back to top_k.
+    rerank_candidates: int = 25
+    # RAG: "template" (extractive, offline, default) or "openai" (semfuse[rag]).
+    llm_provider: str = "template"
+    llm_model: str = DEFAULT_LLM_MODEL
+    # Extra provider-specific options forwarded to the LLM provider.
+    llm_options: dict[str, object] = field(default_factory=dict)
     # When True, the embedding model is loaded on first use (not at construction).
     lazy: bool = True
     # Device hint for backends that support it: "cpu", "cuda", "mps", or None for auto.
@@ -54,4 +71,12 @@ class SemFuseConfig:
             raise ValueError("chunk_size must be positive")
         if not 0 <= self.chunk_overlap < self.chunk_size:
             raise ValueError("chunk_overlap must be in [0, chunk_size)")
+        if self.semantic_weight < 0 or self.keyword_weight < 0:
+            raise ValueError("retrieval weights must be non-negative")
+        if self.semantic_weight + self.keyword_weight <= 0:
+            raise ValueError("at least one retrieval weight must be positive")
+        if self.rerank_candidates <= 0:
+            raise ValueError("rerank_candidates must be positive")
+        if isinstance(self.fusion_method, str):
+            self.fusion_method = FusionMethod(self.fusion_method)
         self.storage_path = Path(self.storage_path)

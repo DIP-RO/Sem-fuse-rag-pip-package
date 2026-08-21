@@ -14,21 +14,31 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from semfuse.chunking.recursive import RecursiveCharacterChunker
 from semfuse.core.config import (
     SemFuseConfig,
 )
-from semfuse.core.enums import SearchMode, SimilarityMetric
-from semfuse.core.exceptions import ConfigurationError
+from semfuse.core.enums import FusionMethod, Language, SearchMode, SimilarityMetric
+from semfuse.core.exceptions import ConfigurationError, DocumentLoadError
 from semfuse.core.types import (
     CollectionInfo,
     Document,
     DocumentChunk,
+    RAGResponse,
     SearchResult,
 )
 from semfuse.embeddings.base import EmbeddingProvider
 from semfuse.embeddings.factory import create_embedding_provider
 from semfuse.language.detector import detect_language
-from semfuse.language.normalizer import normalize_text
+from semfuse.language.normalizer import normalize_for_search
+from semfuse.loaders.factory import SUPPORTED_EXTENSIONS, load_document
+from semfuse.rag.factory import create_llm_provider
+from semfuse.rag.pipeline import RAGPipeline
+from semfuse.reranking.base import Reranker
+from semfuse.reranking.factory import create_reranker
+from semfuse.reranking.lexical import LexicalReranker
+from semfuse.retrieval.hybrid import HybridRetriever
+from semfuse.retrieval.keyword import KeywordRetriever
 from semfuse.retrieval.semantic import SemanticRetriever
 from semfuse.utils.hashing import content_hash, short_hash
 from semfuse.utils.logging import get_logger
@@ -36,7 +46,9 @@ from semfuse.vectorstores.local import LocalVectorStore
 
 logger = get_logger(__name__)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
+
+_INDEX_INFO_FILE = "index_info.json"
 
 
 class SemFuse:
@@ -56,6 +68,10 @@ class SemFuse:
         score_threshold: float | None = None,
         chunk_size: int | None = None,
         chunk_overlap: int | None = None,
+        fusion_method: str | FusionMethod | None = None,
+        reranker: str | None = None,
+        llm_provider: str | None = None,
+        llm_model: str | None = None,
         device: str | None = None,
         embedding_options: dict[str, object] | None = None,
         config: SemFuseConfig | None = None,
@@ -88,6 +104,16 @@ class SemFuse:
             cfg.chunk_size = chunk_size
         if chunk_overlap is not None:
             cfg.chunk_overlap = chunk_overlap
+        if fusion_method is not None:
+            cfg.fusion_method = (
+                FusionMethod(fusion_method) if isinstance(fusion_method, str) else fusion_method
+            )
+        if reranker is not None:
+            cfg.reranker = reranker
+        if llm_provider is not None:
+            cfg.llm_provider = llm_provider
+        if llm_model is not None:
+            cfg.llm_model = llm_model
         if device is not None:
             cfg.device = device
         if embedding_options is not None:
@@ -99,8 +125,8 @@ class SemFuse:
 
         if cfg.vector_store != "local":
             raise ConfigurationError(
-                f"vector_store={cfg.vector_store!r} is not implemented in Phase 1. "
-                "Use 'local'."
+                f"vector_store={cfg.vector_store!r} is not implemented yet. "
+                "Use 'local'. (FAISS/Qdrant backends are planned extras.)"
             )
 
         self._embeddings: EmbeddingProvider = create_embedding_provider(cfg)
@@ -111,7 +137,20 @@ class SemFuse:
             metric=cfg.metric,
             collection=cfg.collection,
         )
+        self._chunker = RecursiveCharacterChunker(
+            chunk_size=cfg.chunk_size, chunk_overlap=cfg.chunk_overlap
+        )
         self._retriever = SemanticRetriever(self._embeddings, self._store)
+        self._keyword_retriever = KeywordRetriever(self._store)
+        self._hybrid_retriever = HybridRetriever(
+            self._retriever,
+            self._keyword_retriever,
+            method=cfg.fusion_method,
+            semantic_weight=cfg.semantic_weight,
+            keyword_weight=cfg.keyword_weight,
+        )
+        self._reranker: Reranker | None = create_reranker(cfg)
+        self._llm = create_llm_provider(cfg)
 
         # Load any existing persisted index.
         self._store.load()
@@ -154,24 +193,27 @@ class SemFuse:
         )
 
     def _chunk_document(self, doc: Document) -> list[DocumentChunk]:
-        # Phase 1: a document is a single chunk. Recursive chunking arrives in Phase 3.
-        normalized = normalize_text(doc.text)
         doc_id = doc.document_id or short_hash(doc.text + "|" + doc.source)
-        chunk_id = short_hash(doc_id + "|0")
-        chunk = DocumentChunk(
-            chunk_id=chunk_id,
-            document_id=doc_id,
-            text=doc.text,
-            normalized_text=normalized,
-            language=doc.language,
-            source=doc.source,
-            title=doc.title,
-            page=doc.page,
-            metadata={**doc.metadata, "language": doc.language.value},
-            chunk_index=0,
-            content_hash=content_hash(normalized),
-        )
-        return [chunk]
+        chunks: list[DocumentChunk] = []
+        for index, piece in enumerate(self._chunker.split(doc.text)):
+            language = detect_language(piece)
+            normalized = normalize_for_search(piece, language)
+            chunks.append(
+                DocumentChunk(
+                    chunk_id=short_hash(doc_id + "|" + str(index)),
+                    document_id=doc_id,
+                    text=piece,
+                    normalized_text=normalized,
+                    language=language,
+                    source=doc.source,
+                    title=doc.title,
+                    page=doc.page,
+                    metadata={**doc.metadata, "language": language.value},
+                    chunk_index=index,
+                    content_hash=content_hash(normalized),
+                )
+            )
+        return chunks
 
     def add(
         self,
@@ -207,6 +249,57 @@ class SemFuse:
         docs = [self._make_document(t, metadata=m, source=source) for t, m in zip(texts, metas, strict=True)]
         return self._index_documents(docs, persist=persist)
 
+    def add_file(
+        self,
+        path: str | Path,
+        metadata: dict[str, Any] | None = None,
+        persist: bool = True,
+    ) -> int:
+        """Load and index a file (TXT/MD/PDF/DOCX). Returns chunks added."""
+        docs = load_document(path)
+        if not docs:
+            logger.warning("No content extracted from %s.", path)
+            return 0
+        if metadata:
+            docs = [
+                Document(
+                    text=d.text,
+                    source=d.source,
+                    title=d.title,
+                    page=d.page,
+                    language=d.language,
+                    metadata={**d.metadata, **metadata},
+                    document_id=d.document_id,
+                )
+                for d in docs
+            ]
+        return self._index_documents(docs, persist=persist)
+
+    def add_directory(
+        self,
+        path: str | Path,
+        recursive: bool = True,
+        extensions: tuple[str, ...] | None = None,
+        metadata: dict[str, Any] | None = None,
+        persist: bool = True,
+    ) -> int:
+        """Index every supported file under ``path``. Returns chunks added."""
+        root = Path(path)
+        if not root.is_dir():
+            raise DocumentLoadError(f"Not a directory: {root}")
+        allowed = tuple(e.lower() for e in (extensions or SUPPORTED_EXTENSIONS))
+        pattern = "**/*" if recursive else "*"
+        files = sorted(
+            p for p in root.glob(pattern) if p.is_file() and p.suffix.lower() in allowed
+        )
+        total = 0
+        for file_path in files:
+            total += self.add_file(file_path, metadata=metadata, persist=False)
+        if persist:
+            self._store.persist()
+        logger.info("Indexed %d chunks from %d files under %s.", total, len(files), root)
+        return total
+
     def _index_documents(self, docs: list[Document], persist: bool) -> int:
         chunks: list[DocumentChunk] = []
         for doc in docs:
@@ -223,6 +316,11 @@ class SemFuse:
         return added
 
     # ------------------------------------------------------------------ search
+    def _prepare_query(self, query: str) -> tuple[Language, str]:
+        """Detect the query language and produce the search-normalized form."""
+        language = detect_language(query)
+        return language, normalize_for_search(query, language)
+
     def search(
         self,
         query: str,
@@ -231,17 +329,21 @@ class SemFuse:
         score_threshold: float | None = None,
         filter: dict[str, object] | None = None,
         mode: str | SearchMode | None = None,
+        rerank: bool | None = None,
         include_metadata: bool = True,
     ) -> list[SearchResult]:
         """Search the index.
 
         Args:
-            query: Query text (any supported language).
+            query: Query text (any supported language, including Banglish).
             top_k: Number of results (defaults to config).
             score_threshold: Minimum score (defaults to config).
             filter: Metadata equality filter, e.g. ``{"department": "CSE"}``.
-            mode: Search mode. Phase 1 supports ``semantic``; ``auto``/``hybrid``/
-                ``keyword`` resolve to semantic in Phase 1 and are expanded later.
+            mode: Search mode: ``semantic``, ``keyword``, ``hybrid``, or
+                ``auto`` (resolves to hybrid).
+            rerank: Force reranking on/off for this call. Defaults to "on if a
+                reranker is configured". ``rerank=True`` without a configured
+                reranker uses the offline lexical reranker.
             include_metadata: Whether to populate metadata on results.
         """
         if not isinstance(query, str) or not query.strip():
@@ -249,9 +351,18 @@ class SemFuse:
         k = top_k if top_k is not None else self._config.top_k
         threshold = score_threshold if score_threshold is not None else self._config.score_threshold
         chosen_mode = self._resolve_mode(mode)
-        # Phase 1: all modes route to semantic retrieval.
-        _ = chosen_mode  # mode selection layer expands in Phase 4
-        results = self._retriever.retrieve(query, top_k=k, filter=filter)
+        _, normalized_query = self._prepare_query(query)
+
+        reranker = self._reranker
+        if rerank is True and reranker is None:
+            reranker = LexicalReranker()
+        rerank_active = reranker is not None and rerank is not False
+
+        fetch_k = max(k, self._config.rerank_candidates) if rerank_active else k
+        results = self._retrieve(normalized_query, chosen_mode, fetch_k, filter)
+        if rerank_active and reranker is not None:
+            results = reranker.rerank(normalized_query, results, top_k=k)
+        results = results[:k]
         if threshold > 0:
             results = [r for r in results if r.score >= threshold]
         if not include_metadata:
@@ -270,10 +381,49 @@ class SemFuse:
             ]
         return results
 
+    def _retrieve(
+        self,
+        normalized_query: str,
+        mode: SearchMode,
+        top_k: int,
+        filter: dict[str, object] | None,
+    ) -> list[SearchResult]:
+        if mode == SearchMode.SEMANTIC:
+            return self._retriever.retrieve(normalized_query, top_k=top_k, filter=filter)
+        if mode == SearchMode.KEYWORD:
+            return self._keyword_retriever.retrieve(normalized_query, top_k=top_k, filter=filter)
+        # HYBRID (and AUTO, resolved earlier) fuse both retrievers.
+        return self._hybrid_retriever.retrieve(normalized_query, top_k=top_k, filter=filter)
+
     def _resolve_mode(self, mode: str | SearchMode | None) -> SearchMode:
         if mode is None:
-            return self._config.search_mode
-        return SearchMode(mode) if isinstance(mode, str) else mode
+            resolved = self._config.search_mode
+        else:
+            resolved = SearchMode(mode) if isinstance(mode, str) else mode
+        # AUTO fuses semantic and keyword evidence; on corpora where keyword
+        # matching finds nothing, fusion degrades gracefully to semantic-only.
+        return SearchMode.HYBRID if resolved == SearchMode.AUTO else resolved
+
+    # ------------------------------------------------------------------ rag
+    def ask(
+        self,
+        question: str,
+        *,
+        top_k: int | None = None,
+        filter: dict[str, object] | None = None,
+        mode: str | SearchMode | None = None,
+    ) -> RAGResponse:
+        """Answer ``question`` from the index with numbered citations.
+
+        Uses the configured ``llm_provider`` — the default ``template``
+        provider is extractive (offline, no API key); configure
+        ``llm_provider="openai"`` for generative answers.
+        """
+        pipeline = RAGPipeline(
+            retrieve=lambda q: self.search(q, top_k=top_k, filter=filter, mode=mode),
+            llm=self._llm,
+        )
+        return pipeline.ask(question)
 
     # ------------------------------------------------------------------ ops
     def delete(self, chunk_id: str, persist: bool = True) -> None:
@@ -292,11 +442,14 @@ class SemFuse:
         self._store.persist()
 
     # ------------------------------------------------------------------ info
-    def info(self) -> dict[str, Any]:
-        lang_dist: dict[str, int] = {}
-        for chunk in getattr(self._store, "_chunks", []):
+    def _language_distribution(self) -> dict[str, int]:
+        dist: dict[str, int] = {}
+        for chunk in self._store.chunks():
             key = chunk.language.value
-            lang_dist[key] = lang_dist.get(key, 0) + 1
+            dist[key] = dist.get(key, 0) + 1
+        return dist
+
+    def info(self) -> dict[str, Any]:
         info = self._store.index_info()
         return {
             "package_version": __version__,
@@ -307,41 +460,49 @@ class SemFuse:
             "index_version": info.index_version,
             "vector_backend": self._config.vector_store,
             "metric": info.metric,
+            "search_mode": self._config.search_mode.value,
+            "fusion_method": self._config.fusion_method.value,
+            "reranker": self._config.reranker,
+            "llm_provider": self._config.llm_provider,
             "storage_path": str(self._config.storage_path),
             "collection": self._config.collection,
             "document_count": self._unique_document_count(),
             "chunk_count": self._store.count(),
-            "language_distribution": lang_dist,
+            "language_distribution": self._language_distribution(),
         }
 
     def _unique_document_count(self) -> int:
-        ids = {c.document_id for c in getattr(self._store, "_chunks", [])}
-        return len(ids)
+        return len({c.document_id for c in self._store.chunks()})
 
     def collection_info(self) -> CollectionInfo:
-        lang_dist: dict[str, int] = {}
-        for chunk in getattr(self._store, "_chunks", []):
-            key = chunk.language.value
-            lang_dist[key] = lang_dist.get(key, 0) + 1
         return CollectionInfo(
             name=self._config.collection,
             document_count=self._unique_document_count(),
             chunk_count=self._store.count(),
-            language_distribution=lang_dist,
+            language_distribution=self._language_distribution(),
+        )
+
+    def list_collections(self) -> list[str]:
+        """Names of collections persisted under this client's storage path."""
+        root = Path(self._config.storage_path)
+        if not root.is_dir():
+            return []
+        return sorted(
+            p.name for p in root.iterdir() if p.is_dir() and (p / _INDEX_INFO_FILE).exists()
         )
 
     def explain(self, query: str) -> dict[str, Any]:
         """Diagnostic view of how a query would be processed."""
-        from semfuse.language.normalizer import normalize_text as _norm
-
-        lang = detect_language(query)
+        language, normalized_query = self._prepare_query(query)
         mode = self._resolve_mode(None)
         results = self.search(query, top_k=self._config.top_k)
         return {
             "query": query,
-            "detected_language": lang.value,
-            "normalized_query": _norm(query),
+            "detected_language": language.value,
+            "normalized_query": normalized_query,
             "search_mode": mode.value,
+            "fusion_method": self._config.fusion_method.value,
+            "reranker": self._config.reranker,
             "embedding_provider": self._config.embedding_provider,
             "embedding_model": self._embeddings.model_name,
             "candidate_count": len(results),

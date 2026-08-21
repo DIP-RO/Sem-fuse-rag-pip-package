@@ -1,5 +1,13 @@
 # SemFuse
 
+[![PyPI version](https://img.shields.io/pypi/v/semfuse)](https://pypi.org/project/semfuse/)
+[![Python versions](https://img.shields.io/pypi/pyversions/semfuse)](https://pypi.org/project/semfuse/)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Tests](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/actions/workflows/ci.yml)
+[![PyPI downloads](https://img.shields.io/pypi/dm/semfuse)](https://pypistats.org/packages/semfuse)
+[![GitHub stars](https://img.shields.io/github/stars/DIP-RO/Sem-fuse-rag-pip-package?style=flat)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/DIP-RO/Sem-fuse-rag-pip-package?style=flat)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/forks)
+
 > Lightweight multilingual semantic retrieval with first-class **Bangla**,
 > **English**, **Banglish**, and **mixed-language** support, plus an optional
 > RAG layer.
@@ -32,15 +40,19 @@ a vector database by hand.
 
 - Zero-config initialization: `SemFuse()` just works
 - Multilingual semantic retrieval (Bangla, English, cross-lingual)
-- Banglish / mixed-language handling (Phase 2 expands this)
+- Banglish detection, normalization, and transliteration ([docs/banglish.md](docs/banglish.md))
+- Document ingestion: TXT/MD, PDF, DOCX loaders with recursive chunking
+- Keyword (BM25) and hybrid retrieval with weighted / RRF score fusion
+- Reranking: offline lexical reranker or a multilingual cross-encoder
+- RAG with numbered citations: offline extractive default, OpenAI optional
+- Evaluation subsystem (Recall@K, MRR, NDCG, Hit@K) + built-in Banglish benchmark
 - Local persistent vector store (numpy-based, no external services)
 - Deterministic offline embedding provider for testing
 - Configurable embedding providers, metrics, and search modes
-- Metadata filtering
-- Content-hash deduplication
+- Metadata filtering, collections, content-hash deduplication
 - Index version guards (clear errors on model/dimension mismatch)
 - Typed results with citations-ready metadata
-- Optional RAG layer (later phases)
+- CLI: `semfuse info | index | search | ask`
 - Lightweight core: numpy + sentence-transformers only by default
 
 ## Quickstart
@@ -113,6 +125,45 @@ db.add("EEE admission notice.", metadata={"department": "EEE"})
 print(db.search("admission", filter={"department": "CSE"}))
 ```
 
+### File & directory ingestion
+
+```python
+db.add_file("notes.txt")                  # TXT/MD; PDF/DOCX via extras
+db.add_file("report.pdf")                 # one document per page
+db.add_directory("./corpus", recursive=True)
+```
+
+Long documents are chunked recursively (paragraphs → sentences, including the
+Bangla dari `।`) with configurable `chunk_size` / `chunk_overlap`; duplicate
+chunks are skipped by content hash.
+
+### Search modes & reranking
+
+```python
+db.search("query")                        # auto = hybrid (semantic + BM25, fused)
+db.search("query", mode="semantic")       # embeddings only
+db.search("query", mode="keyword")        # BM25 only
+db.search("query", rerank=True)           # offline lexical reranker
+
+db = SemFuse(reranker="cross-encoder")    # multilingual model-based reranking
+db = SemFuse(fusion_method="rrf")         # rank-based fusion instead of weighted
+```
+
+### RAG with citations
+
+```python
+response = db.ask("Bangladesh er rajdhani kothay?")
+print(response.answer)                    # "ঢাকা বাংলাদেশের রাজধানী। [1]"
+print(response.citations[0].text)         # the passage behind [1]
+```
+
+The default provider is extractive (offline, no API key). For generative
+answers:
+
+```python
+db = SemFuse(llm_provider="openai", llm_model="gpt-4o-mini")  # semfuse[rag]
+```
+
 ### Advanced configuration
 
 ```python
@@ -139,8 +190,10 @@ SemFuse is layered: **Language → Embeddings → Ingestion → Indexing → Ret
 → (Reranker) → (RAG)**. Every pluggable layer is a `Protocol`:
 
 - `EmbeddingProvider` — `embed_documents`, `embed_query`, `dimension`, `model_name`
-- `VectorStore` — `add`, `add_many`, `search`, `delete`, `clear`, `count`, `persist`, `load`
+- `VectorStore` — `add`, `add_many`, `search`, `delete`, `clear`, `count`, `chunks`, `persist`, `load`
 - `Retriever` — `retrieve(query, top_k, filter)`
+- `TextChunker`, `DocumentLoader`, `LanguageDetector`, `TextNormalizer`,
+  `Reranker`, `LLMProvider`
 
 See [docs/architecture.md](docs/architecture.md) and
 [docs/architecture-decisions.md](docs/architecture-decisions.md) for the full
@@ -161,17 +214,19 @@ in `SemFuseConfig` — change it without code edits.
 | Key | Backend | Notes |
 |-----|---------|-------|
 | `local` (default) | numpy + JSON files | No external services, persistent |
-| `faiss` | FAISS | Optional extra (`semfuse[faiss]`) — later phase |
-| `qdrant` | Qdrant | Optional extra (`semfuse[qdrant]`) — later phase |
+| `faiss` | FAISS | Optional extra (`semfuse[faiss]`) — planned |
+| `qdrant` | Qdrant | Optional extra (`semfuse[qdrant]`) — planned |
 
 ## Banglish support
 
-Banglish (Bengali written in Latin script) is a core feature. The architecture
-provides `detect_language`, `normalize_text`, and a `BanglishNormalizer`
-abstraction (Phase 2) so Banglish processing can evolve independently of the
-embedding model. The original text is always preserved.
+Banglish (Bengali written in Latin script) is a core feature. Queries and
+documents flow through `detect_language` → `BanglishNormalizer` (spelling
+canonicalization + token transliteration to Bangla), so `Bangladesh er
+rajdhani kothay?` matches `ঢাকা বাংলাদেশের রাজধানী।` in both embedding and
+keyword space. The original text is always preserved.
 
-See [docs/banglish.md](docs/banglish.md).
+See [docs/banglish.md](docs/banglish.md) for the pipeline, the lexicons, and
+the runnable benchmark behind these claims.
 
 ## Installation extras
 
@@ -190,16 +245,51 @@ pip install semfuse[all]       # everything
 
 ```bash
 semfuse info
-semfuse --storage ./.semfuse info
+semfuse index docs/ notes.txt --text "inline document"
+semfuse search "Bangladesh er capital ki?" --top-k 3 --mode hybrid --json
+semfuse ask "bhorti porikkha kokhon hobe?"
+semfuse --storage ./.semfuse --collection admission info
 ```
 
-(`index` and `search` subcommands arrive with later phases.)
+## Docker
+
+```bash
+docker build -t semfuse .
+
+# One named volume persists both the index and the embedding-model cache,
+# so the model downloads once and is reused across containers.
+docker run --rm -v semfuse-data:/data semfuse index --text "ঢাকা বাংলাদেশের রাজধানী।"
+docker run --rm -v semfuse-data:/data semfuse search "Bangladesh er capital ki?"
+docker run --rm -v semfuse-data:/data semfuse ask "desh er rajdhani kothay?"
+
+# Fully offline (no model download): use the deterministic hashing provider
+docker run --rm -v semfuse-data:/data semfuse --provider hashing info
+```
+
+The image uses CPU-only PyTorch (≈1.8 GB instead of the multi-GB CUDA
+default). To index files from the host, mount them read-only:
+`docker run --rm -v semfuse-data:/data -v "$PWD/docs:/docs:ro" semfuse index /docs`.
+
+Tagged releases publish a prebuilt multi-arch image (amd64/arm64) to GHCR:
+`docker pull ghcr.io/dip-ro/semfuse:latest`.
 
 ## Evaluation
 
-SemFuse includes an evaluation subsystem (later phases) with Recall@K, MRR,
-NDCG, and Hit@K, plus a Banglish benchmark fixture. We do not publish benchmark
-numbers that are not backed by runnable evaluations.
+SemFuse includes an evaluation subsystem with Recall@K, MRR, NDCG, and Hit@K,
+plus a built-in Banglish benchmark. We do not publish benchmark numbers that
+are not backed by runnable evaluations.
+
+```python
+from semfuse import SemFuse
+from semfuse.evaluation import RetrievalEvaluator, EvalSample, banglish_benchmark
+
+db = SemFuse(storage_path="./.semfuse-bench")
+docs, samples = banglish_benchmark()
+for doc_id, text in docs:
+    db.add(text, document_id=doc_id)
+print(RetrievalEvaluator(db).evaluate(samples, k_values=(1, 3)))
+# EvaluationReport(samples=6, hit@1=..., hit@3=..., mrr=..., ...)
+```
 
 ## Performance
 
@@ -212,26 +302,28 @@ numbers that are not backed by runnable evaluations.
 
 ## Limitations
 
-- Phase 1 ships semantic retrieval only; keyword/hybrid retrieval, reranking,
-  and RAG arrive in later phases.
-- Banglish retrieval relies on the multilingual model's cross-script ability in
-  Phase 1; dedicated Banglish normalization lands in Phase 2 and measurably
-  improves Banglish→Bangla retrieval.
+- Banglish transliteration is lexicon-based: high-frequency words are covered,
+  long-tail romanizations fall back to the multilingual model's cross-script
+  ability. Growing the lexicons (with benchmark evidence) is welcome.
 - The default local vector store is in-memory with file persistence; it is not
-  optimized for very large corpora (FAISS/Qdrant extras address this later).
-- A single document is a single chunk in Phase 1; recursive chunking lands in
-  Phase 3.
+  optimized for very large corpora (FAISS/Qdrant extras will address this).
+- The default RAG provider is extractive, not generative — it returns the
+  best-matching passage with a citation. Configure `llm_provider="openai"` for
+  generated answers.
+- The BM25 index is rebuilt in memory when the corpus changes; this is fine for
+  the corpus sizes the local store targets.
 
 ## Roadmap
 
 - [x] Phase 1 — Core foundation (embeddings, local store, semantic retrieval, persistence)
-- [ ] Phase 2 — Language & Banglish normalization
-- [ ] Phase 3 — Document ingestion (TXT/PDF/DOCX, chunking, dedup)
-- [ ] Phase 4 — Keyword & hybrid retrieval, fusion, collections
-- [ ] Phase 5 — Reranking
-- [ ] Phase 6 — RAG (LLM providers, citations)
-- [ ] Phase 7 — Evaluation (Recall@K, MRR, NDCG, Banglish benchmark)
-- [ ] Phase 8 — Production quality (CLI, CI, docs, examples)
+- [x] Phase 2 — Language & Banglish normalization
+- [x] Phase 3 — Document ingestion (TXT/PDF/DOCX, chunking, dedup)
+- [x] Phase 4 — Keyword & hybrid retrieval, fusion, collections
+- [x] Phase 5 — Reranking
+- [x] Phase 6 — RAG (LLM providers, citations)
+- [x] Phase 7 — Evaluation (Recall@K, MRR, NDCG, Banglish benchmark)
+- [x] Phase 8 — Production quality (CLI, CI, docs, examples)
+- [ ] FAISS / Qdrant vector store backends (optional extras)
 
 ## Contributing
 

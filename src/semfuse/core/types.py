@@ -118,3 +118,26 @@ class CollectionInfo:
     document_count: int
     chunk_count: int
     language_distribution: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RAGResponse:
+    """Answer produced by the RAG pipeline.
+
+    Attributes:
+        answer: Generated (or extracted) answer text with ``[n]`` citations.
+        model: Identifier of the LLM that produced the answer.
+        citations: Retrieved chunks backing the answer; ``[n]`` markers in the
+            answer refer to ``citations[n - 1]``.
+        prompt: The exact prompt sent to the LLM (empty when nothing was
+            retrieved), kept for auditability.
+    """
+
+    answer: str
+    model: str
+    citations: list[SearchResult] = field(default_factory=list)
+    prompt: str = ""
+
+    def __repr__(self) -> str:
+        preview = self.answer if len(self.answer) <= 60 else self.answer[:57] + "..."
+        return f"RAGResponse(answer={preview!r}, citations={len(self.citations)})"

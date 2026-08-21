@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "semfuse"
-version = "0.1.0"
+version = "0.2.0"
 description = "Lightweight multilingual semantic retrieval with first-class Bangla, English, Banglish, and mixed-language support, plus optional RAG."
 readme = "README.md"
 license = "Apache-2.0"
@@ -62,9 +62,9 @@ all = [
 semfuse = "semfuse.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/semfuse/semfuse"
-Documentation = "https://github.com/semfuse/semfuse#readme"
-Issues = "https://github.com/semfuse/semfuse/issues"
+Homepage = "https://github.com/DIP-RO/Sem-fuse-rag-pip-package"
+Documentation = "https://github.com/DIP-RO/Sem-fuse-rag-pip-package#readme"
+Issues = "https://github.com/DIP-RO/Sem-fuse-rag-pip-package/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -82,7 +82,8 @@ select = ["E", "F", "I", "UP", "B", "W"]
 ignore = ["E501"]
 
 [tool.mypy]
-python_version = "3.10"
+# Runtime supports 3.10+; numpy 2.x stubs need 3.12+ `type` statements to parse.
+python_version = "3.12"
 strict = false
 ignore_missing_imports = true
 warn_unused_ignores = true
