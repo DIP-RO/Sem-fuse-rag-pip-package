@@ -8,11 +8,9 @@ name: Release
 #      at github.com -> your profile -> Packages -> semfuse -> Package settings
 #      -> Change visibility -> Public, or `docker pull` will be denied for
 #      everyone.
-#   4. publish to PyPI — requires a one-time Trusted Publisher setup on PyPI
-#      (pypi.org -> project semfuse -> Settings -> Publishing -> add GitHub
-#      publisher: repo DIP-RO/Sem-fuse-rag-pip-package, workflow release.yml,
-#      environment pypi). Until that is configured, this one job fails while
-#      the release and image still succeed.
+#   4. publish to PyPI — uses the PYPI_API_TOKEN repository secret.
+#      Add it at: repo Settings -> Secrets and variables -> Actions ->
+#      New repository secret -> Name: PYPI_API_TOKEN -> Value: pypi-<your token>.
 
 on:
   push:
@@ -83,11 +81,15 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
-    permissions:
-      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          pip install twine
+          twine upload dist/*
