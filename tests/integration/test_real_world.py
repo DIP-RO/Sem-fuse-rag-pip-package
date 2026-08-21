@@ -12,14 +12,14 @@ import os
 import tempfile
 
 import pytest
+
+from semfuse import SemFuse, SemFuseConfig
+from semfuse.core.enums import SearchMode
 from tests.fixtures.real_world_corpus import (
     CROSS_LANGUAGE_QUERIES,
     RAG_QA_PAIRS,
     REAL_WORLD_CORPUS,
 )
-
-from semfuse import SemFuse, SemFuseConfig
-from semfuse.core.enums import SearchMode
 
 
 @pytest.fixture
