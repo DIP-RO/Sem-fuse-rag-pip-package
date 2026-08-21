@@ -203,3 +203,134 @@ def test_explain_bangla_detection(real_db: SemFuse) -> None:
 def test_explain_english_detection(real_db: SemFuse) -> None:
     expl = real_db.explain("What is the capital of Bangladesh?")
     assert expl["detected_language"] == "en"
+
+
+# ---------------------------------------------------------------------------
+# Banglish answer extraction correctness
+# ---------------------------------------------------------------------------
+
+
+def test_banglish_ask_extracts_correct_answer() -> None:
+    """Banglish 'Bangladesh er capital ki?' should extract 'Dhaka', not 'Bangladesh'."""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = SemFuseConfig(
+            embedding_provider="hashing",
+            embedding_dimension=256,
+            storage_path=td,
+        )
+        db = SemFuse(config=cfg)
+        db.add("Bangladesh er rajdhani Dhaka. Khub boro shohor.", source="banglish.txt")
+        resp = db.ask("Bangladesh er capital ki?")
+        # Should extract "Dhaka" (the answer), not "Bangladesh" (the subject).
+        assert "Dhaka" in resp.answer or "ঢাকা" in resp.answer
+        assert "Bangladesh" not in resp.answer or "ঢাকা" in resp.answer
+
+
+def test_banglish_ask_extracts_correct_answer_variant() -> None:
+    """Banglish 'Bangladesher rajdhani ki?' should also extract 'Dhaka'."""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = SemFuseConfig(
+            embedding_provider="hashing",
+            embedding_dimension=256,
+            storage_path=td,
+        )
+        db = SemFuse(config=cfg)
+        db.add("Bangladesh er rajdhani Dhaka. Khub boro shohor.", source="banglish.txt")
+        resp = db.ask("Bangladesher rajdhani ki?")
+        assert "Dhaka" in resp.answer or "ঢাকা" in resp.answer
+
+
+# ---------------------------------------------------------------------------
+# Edge cases and error handling
+# ---------------------------------------------------------------------------
+
+
+def test_search_top_k_zero_raises() -> None:
+    """top_k=0 should raise ConfigurationError."""
+    with tempfile.TemporaryDirectory() as td:
+        db = SemFuse(storage_path=td)
+        db.add("some text")
+        with pytest.raises(Exception, match="top_k must be a positive"):
+            db.search("some text", top_k=0)
+
+
+def test_search_empty_query_raises(real_db: SemFuse) -> None:
+    """Empty query should raise."""
+    with pytest.raises(Exception, match="non-empty"):
+        real_db.search("")
+
+
+def test_ask_empty_question_raises(real_db: SemFuse) -> None:
+    """Empty question should raise."""
+    with pytest.raises(Exception, match="non-empty"):
+        real_db.ask("")
+
+
+def test_add_empty_text_raises(real_db: SemFuse) -> None:
+    """Empty text should raise."""
+    with pytest.raises(Exception, match="non-empty"):
+        real_db.add("")
+
+
+def test_add_non_string_raises(real_db: SemFuse) -> None:
+    """Non-string input should raise."""
+    with pytest.raises(Exception, match="non-empty"):
+        real_db.add(123)  # type: ignore[arg-type]
+
+
+def test_ask_no_context_returns_honest_refusal() -> None:
+    """ask() on empty DB should return a 'no context' message, not crash."""
+    with tempfile.TemporaryDirectory() as td:
+        db = SemFuse(storage_path=td)
+        resp = db.ask("What is the capital?")
+        assert "could not find" in resp.answer.lower() or "পাওয়া যায়নি" in resp.answer
+        assert len(resp.citations) == 0
+
+
+def test_ask_bangla_no_context_returns_bangla_refusal() -> None:
+    """Bangla question on empty DB should return Bangla refusal."""
+    with tempfile.TemporaryDirectory() as td:
+        db = SemFuse(storage_path=td)
+        resp = db.ask("বাংলাদেশের রাজধানী কী?")
+        assert "পাওয়া যায়নি" in resp.answer
+
+
+def test_dedup_on_identical_add(real_db: SemFuse) -> None:
+    """Adding identical text twice should deduplicate."""
+    n1 = real_db.add("unique dedup test text 12345")
+    n2 = real_db.add("unique dedup test text 12345")
+    assert n1 == 1
+    assert n2 == 0  # Deduplicated
+
+
+def test_persist_and_reload_preserves_data() -> None:
+    """Persist + reload should preserve all chunks."""
+    with tempfile.TemporaryDirectory() as td:
+        db = SemFuse(storage_path=td)
+        db.add("ঢাকা বাংলাদেশের রাজধানী।")
+        db.add("Dhaka is the capital.")
+        db.persist()
+        db2 = SemFuse(storage_path=td)
+        assert db2.count() == 2
+
+
+def test_clear_removes_all(real_db: SemFuse) -> None:
+    """clear() should remove all chunks."""
+    real_db.add("test text for clearing")
+    assert real_db.count() > 0
+    real_db.clear()
+    assert real_db.count() == 0
+
+
+def test_mixed_language_query(real_db: SemFuse) -> None:
+    """A query mixing Bangla and English should still return results."""
+    results = real_db.search("capital of বাংলাদেশ", top_k=3)
+    assert len(results) > 0
+
+
+def test_unicode_edge_cases(real_db: SemFuse) -> None:
+    """Text with ZWJ, emoji, and mixed Unicode should not crash."""
+    n1 = real_db.add("ঢাকা\u200d বাংলাদেশের রাজধানী।")
+    n2 = real_db.add("Dhaka is the capital 🇧🇩 of Bangladesh.")
+    assert n1 >= 1
+    assert n2 >= 1

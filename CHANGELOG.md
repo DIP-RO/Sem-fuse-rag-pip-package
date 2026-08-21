@@ -4,6 +4,59 @@ All notable changes to SemFuse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-08-22
+
+### Changed — SLM backend: llama-cpp-python instead of torch (~450 MB, not ~2.5 GB)
+
+The `semfuse[slm]` extra now installs `llama-cpp-python` (~50 MB library)
+instead of `transformers` + `torch` (~2.5 GB). The SLM provider auto-detects
+the available backend:
+
+1. **llama-cpp-python** (preferred) → GGUF quantized model (~400 MB on disk)
+2. **transformers + torch** (fallback) → HuggingFace model (~2.5 GB)
+   - Available via `pip install semfuse[slm-torch]`
+
+The default model is Qwen2.5-0.5B-Instruct in Q4_K_M GGUF quantization.
+Total SLM footprint: **~450 MB** (vs ~2.5 GB with torch). No CUDA, no GPU.
+
+### Fixed — Banglish answer extraction
+
+- "Bangladesh er capital ki?" now correctly extracts "Dhaka" instead of
+  "Bangladesh" from Banglish passages like "Bangladesh er rajdhani Dhaka."
+- Added Banglish-specific regex patterns: "X er rajdhani Y" and
+  "X-er rajdhani Y" where Y is the answer.
+- Bangla-script check ensures the first-token heuristic only applies to
+  Bangla passages, not Banglish ones.
+
+### Fixed — top_k=0 validation
+
+- `search(query, top_k=0)` now raises `ConfigurationError` instead of
+  silently returning empty results.
+
+### Improved — RAG pipeline error handling
+
+- `RAGPipeline.ask()` now has extractive fallback: if the SLM or OpenAI
+  provider crashes or returns empty, the pipeline falls back to the
+  extractive template provider.
+- "No context" responses are language-aware (Bangla for Bangla questions).
+
+### Improved — Docker cross-device compatibility
+
+- Dockerfile no longer installs torch — uses `llama-cpp-python` instead.
+- Multi-arch build: `linux/amd64` + `linux/arm64` (Apple Silicon, Graviton).
+- Build stage uses `--platform=$BUILDPLATFORM` for cross-compilation.
+- Image size dramatically reduced (no torch/CUDA packages).
+
+### Tests: 272 total (up from 258)
+
+- 14 new edge-case and integration tests:
+  - Banglish answer extraction correctness (2 tests)
+  - top_k=0 validation, empty query/question/text handling (5 tests)
+  - No-context refusal (English + Bangla) (2 tests)
+  - Dedup, persist/reload, clear, mixed-language, Unicode edge cases (5 tests)
+- All passing, ruff clean, mypy clean (60 source files).
+- Fresh-install tested in isolated venv — all features work with only numpy.
+
 ## [0.6.0] — 2026-08-22
 
 ### Changed — Lightweight by default (sentence-transformers now optional)

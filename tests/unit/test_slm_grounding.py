@@ -172,9 +172,10 @@ Answer:"""
 
 def test_slm_init_does_not_load_model() -> None:
     provider = LocalSLMProvider()
-    assert provider._model is None
+    assert provider._llm is None
     assert provider._tokenizer is None
-    assert provider.model_name == "Qwen/Qwen2.5-0.5B-Instruct"
+    assert provider._backend is None
+    assert provider.model_name == "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
 
 
 def test_slm_default_params_optimized_for_factual() -> None:

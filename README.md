@@ -300,8 +300,18 @@ db = SemFuse(llm_provider="slm")  # requires: pip install semfuse[slm]
 ```
 
 The SLM provider uses [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
-(500M params, ~1 GB) — small enough to run on a laptop, with Bangla/English/mixed
-support. The model downloads once and is cached locally.
+(500M params) in Q4_K_M GGUF quantization (~400 MB on disk) via `llama-cpp-python`
+(~50 MB library). Total footprint: **~450 MB** — no torch, no CUDA, no GPU required.
+Runs on CPU on x86_64 and ARM64 (Apple Silicon, Graviton, Raspberry Pi).
+
+The provider auto-detects the backend:
+- If `llama-cpp-python` is installed → uses GGUF (lightweight, recommended)
+- Elif `transformers` + `torch` are installed → uses HuggingFace backend
+- Else → raises with install instructions
+
+The model downloads once and is cached locally. Post-processing ensures
+evidence grounding: citation enforcement, hallucination detection with
+extractive fallback, and verbose output trimming.
 
 For OpenAI (optional, requires API key):
 
@@ -412,8 +422,8 @@ docker run --rm -v semfuse-data:/data semfuse --provider hashing info
 docker run --rm -v semfuse-data:/data -v "$PWD/docs:/docs:ro" semfuse index /docs
 ```
 
-The image uses CPU-only PyTorch (~1.8 GB instead of the multi-GB CUDA default).
-Tagged releases publish to GHCR automatically via CI.
+The image uses `llama-cpp-python` (no torch/CUDA) and supports both `linux/amd64`
+and `linux/arm64`. Tagged releases publish to GHCR automatically via CI.
 
 ---
 
@@ -693,7 +703,8 @@ pip install semfuse[pdf]       # PDF loader (pypdf)
 pip install semfuse[docx]      # DOCX loader (python-docx)
 pip install semfuse[faiss]     # FAISS vector store (planned)
 pip install semfuse[qdrant]    # Qdrant vector store (planned)
-pip install semfuse[slm]       # Local SLM RAG provider (transformers + torch, ~1 GB model)
+pip install semfuse[slm]       # Local SLM RAG provider (llama-cpp-python, ~450 MB total)
+pip install semfuse[slm-torch] # Alternative: transformers + torch backend (~2.5 GB)
 pip install semfuse[rag]       # OpenAI RAG provider (optional, requires API key)
 pip install semfuse[dev]       # pytest, ruff, mypy
 pip install semfuse[all]       # everything
@@ -727,7 +738,7 @@ docker pull ghcr.io/dip-ro/semfuse:latest
 - **BM25 inverted index** — O(matched docs) instead of O(n × query terms)
 - **Persistent index** — reopen without re-indexing
 - **CPU by default** — GPU used when available and supported
-- **CPU-only Docker image** — ~1.8 GB instead of multi-GB CUDA default
+- **Multi-arch Docker image** — linux/amd64 + linux/arm64, no torch/CUDA
 
 ---
 

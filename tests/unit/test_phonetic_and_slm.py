@@ -122,7 +122,7 @@ def test_slm_provider_init_no_download() -> None:
     provider = LocalSLMProvider(model="Qwen/Qwen2.5-0.5B-Instruct")
     assert provider.model_name == "Qwen/Qwen2.5-0.5B-Instruct"
     # Model should not be loaded yet.
-    assert provider._model is None
+    assert provider._llm is None
     assert provider._tokenizer is None
 
 

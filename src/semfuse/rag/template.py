@@ -156,14 +156,24 @@ def _extract_answer_span(question: str, passage: str, qtype: str) -> str | None:
             if asks_about_capital:
                 return m.group(1).strip()
             return m.group(2).strip()
+        # Banglish: "X er rajdhani Y" or "X er capital Y" — answer is Y
+        m = re.match(r"^(\S+)\s+er\s+(?:rajdhani|capital)\s+(\S+?)[.।]?$", best_sent, re.IGNORECASE)
+        if m and asks_about_capital:
+            return m.group(2).strip()
+        # Banglish: "X-er rajdhani Y" (no space before er)
+        m = re.match(r"^(\S+?)(?:er|-er)\s+(?:rajdhani|capital)\s+(\S+?)[.।]?$", best_sent, re.IGNORECASE)
+        if m and asks_about_capital:
+            return m.group(2).strip()
         # Bangla: the genitive suffix ের is attached to the noun
         # (বাংলাদেশের), not a separate token.  When the question asks
         # "what is X-এর Y?", the answer is the subject before the
         # possessed noun phrase — i.e. the first word.
         if asks_about_capital:
-            tokens = best_sent.rstrip("।.").strip().split()
-            if len(tokens) >= 2:
-                return tokens[0].strip()
+            # But only if the passage is in Bangla script (not Banglish).
+            if any("\u0980" <= ch <= "\u09FF" for ch in best_sent):
+                tokens = best_sent.rstrip("।.").strip().split()
+                if len(tokens) >= 2:
+                    return tokens[0].strip()
         # General Bangla: "X-এর Y" where we want Y.
         m = re.match(r"^(.+?)\s+\S*ের\s+(.+?)[।.]?$", best_sent)
         if m:

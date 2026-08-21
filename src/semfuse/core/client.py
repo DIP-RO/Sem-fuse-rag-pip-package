@@ -45,7 +45,7 @@ from semfuse.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 _INDEX_INFO_FILE = "index_info.json"
 
@@ -350,6 +350,8 @@ class SemFuse:
         if not isinstance(query, str) or not query.strip():
             raise ConfigurationError("query must be a non-empty string")
         k = top_k if top_k is not None else self._config.top_k
+        if k <= 0:
+            raise ConfigurationError("top_k must be a positive integer")
         threshold = score_threshold if score_threshold is not None else self._config.score_threshold
         chosen_mode = self._resolve_mode(mode)
         _, normalized_query = self._prepare_query(query)
