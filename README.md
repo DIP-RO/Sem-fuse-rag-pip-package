@@ -53,12 +53,15 @@ print(db.search("Bangladesh er capital ki?"))
 - [Vector Stores](#vector-stores)
 - [Banglish Support](#banglish-support)
 - [Evaluation](#evaluation)
+- [RAG Evaluation](#rag-evaluation)
+- [Ablation Experiments](#ablation-experiments)
+- [Baseline Comparison](#baseline-comparison)
+- [Academic Benchmarking](#academic-benchmarking)
 - [Configuration Reference](#configuration-reference)
 - [API Reference](#api-reference)
 - [Installation Extras](#installation-extras)
 - [Performance](#performance)
 - [Limitations](#limitations)
-- [Roadmap](#roadmap)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
 - [License](#license)
@@ -97,6 +100,9 @@ Bangladesher rajdhani ki?            ← Banglish (variant)
 - **Reranking**: offline lexical reranker or a multilingual cross-encoder
 - **RAG with numbered citations**: offline extractive default, local SLM for generative answers, OpenAI optional
 - **Evaluation subsystem**: Recall@K, MRR, NDCG, Hit@K + built-in Banglish benchmark
+- **RAG evaluation**: answer accuracy, faithfulness, citation accuracy, refusal accuracy
+- **Ablation experiments**: toggle reranking, search mode, fusion, weights for controlled studies
+- **Baseline comparison**: SemFuse vs raw LLM, with JSON export for paper tables
 - **Local persistent vector store** (numpy-based, no external services)
 - **Deterministic offline embedding provider** for testing
 - **Configurable** embedding providers, metrics, search modes, fusion, rerankers, LLMs
@@ -584,9 +590,14 @@ the runnable benchmark behind these claims.
 
 ## Evaluation
 
-SemFuse includes an evaluation subsystem with Recall@K, MRR, NDCG, and Hit@K,
-plus a built-in Banglish benchmark fixture. We do not publish benchmark numbers
-that are not backed by runnable evaluations.
+SemFuse includes a full evaluation subsystem with two layers:
+
+1. **Retrieval evaluation** — Recall@K, MRR, NDCG, Hit@K
+2. **RAG evaluation** — answer accuracy, faithfulness, citation accuracy, refusal accuracy
+
+We do not publish benchmark numbers that are not backed by runnable evaluations.
+
+### Retrieval Evaluation
 
 ```python
 from semfuse import SemFuse
@@ -609,6 +620,205 @@ The benchmark includes cross-language pairs:
 | `Bangladesh er capital ki?` | `ঢাকা বাংলাদেশের রাজধানী।` |
 | `Admission er jonno ki ki document lagbe?` | `ভর্তির জন্য প্রয়োজনীয় কাগজপত্র জমা দিতে হবে।` |
 | `Bangladesher rajdhani ki?` | `Dhaka is the capital of Bangladesh.` |
+
+---
+
+## RAG Evaluation
+
+RAG evaluation measures the **answer quality** — not just whether the right
+document was retrieved, but whether the generated answer is correct, grounded,
+and properly cited.
+
+### Metrics
+
+| Metric | What it measures | Range |
+|--------|-----------------|-------|
+| **Answer accuracy** | Does the answer contain the expected answer? (substring / token / exact modes, Bangla-aware) | 0.0 – 1.0 |
+| **Faithfulness** | Is the answer supported by retrieved evidence? (token overlap with stopword removal) | 0.0 – 1.0 |
+| **Citation accuracy** | Do `[n]` markers point to passages that support the answer? | 0.0 – 1.0 |
+| **Refusal accuracy** | Does the system correctly refuse when no context is available? | 0.0 – 1.0 |
+
+### Usage
+
+```python
+from semfuse import SemFuse
+from semfuse.evaluation import RAGEvaluator, RAGEvalSample
+
+db = SemFuse()
+db.add("ঢাকা বাংলাদেশের রাজধানী।", document_id="capital_bn")
+db.add("পদ্মা একটি বড় নদী।", document_id="river_bn")
+
+samples = [
+    RAGEvalSample(
+        question="বাংলাদেশের রাজধানী কী?",
+        expected_answer="ঢাকা",
+        relevant_document_ids=frozenset({"capital_bn"}),
+    ),
+    RAGEvalSample(
+        question="Bangladesh er capital ki?",
+        expected_answer="ঢাকা",
+        relevant_document_ids=frozenset({"capital_bn"}),
+    ),
+    # Unanswerable — system should refuse.
+    RAGEvalSample(
+        question="What is the distance to Andromeda?",
+        expected_answer=None,
+        relevant_document_ids=frozenset(),
+        should_refuse=True,
+    ),
+]
+
+report = RAGEvaluator(db).evaluate(samples, k_values=(1, 3, 5))
+print(report)
+# RAGEvaluationReport(samples=3, answer_accuracy=1.0000, faithfulness=1.0000,
+#   citation_accuracy=1.0000, refusal_accuracy=1.0000, hit@1=1.0000, ...)
+
+# Per-query breakdown:
+for row in report.per_query:
+    print(f"  Q: {row['question']}")
+    print(f"  A: {row['answer']}")
+    print(f"  acc={row['answer_accuracy']:.2f} faith={row['faithfulness']:.2f} "
+          f"cite={row['citation_accuracy']:.2f} refuse={row['refusal_accuracy']:.2f}")
+```
+
+### Faithfulness Algorithm
+
+The faithfulness check uses the same algorithm as the SLM grounding check:
+
+1. Strip citation markers `[n]` from the answer
+2. Tokenize into Unicode word tokens (Bangla `[\u0980-\u09FF]` + English)
+3. Remove stopwords (English: "the", "is", "a"... Bangla: "একটি", "হয়", "নেই"...)
+4. For each evidence passage, compute token overlap
+5. If ≥2 content tokens overlap with any passage → **grounded** (1.0)
+6. If no overlap → **hallucination detected** (0.0)
+
+This ensures no fabricated answer scores well — the metric catches
+hallucinations that retrieval metrics alone would miss.
+
+---
+
+## Ablation Experiments
+
+Ablation experiments toggle individual SemFuse features on/off to measure
+their contribution to retrieval and RAG quality. Designed for academic
+benchmarking and research papers.
+
+```python
+from semfuse.evaluation import AblationRunner, AblationConfig
+
+documents = [
+    ("capital_bn", "ঢাকা বাংলাদেশের রাজধানী।"),
+    ("river_bn", "পদ্মা একটি বড় নদী।"),
+    # ... more documents
+]
+samples = [
+    RAGEvalSample(question="বাংলাদেশের রাজধানী কী?", expected_answer="ঢাকা",
+                  relevant_document_ids=frozenset({"capital_bn"})),
+    # ... more samples
+]
+
+runner = AblationRunner(documents, samples, k_values=(1, 3, 5))
+
+# Use default ablation configs, or define your own:
+configs = [
+    AblationConfig(name="baseline"),
+    AblationConfig(name="with-lexical-rerank", reranker="lexical"),
+    AblationConfig(name="semantic-only", search_mode="semantic"),
+    AblationConfig(name="keyword-only", search_mode="keyword"),
+    AblationConfig(name="hybrid-only", search_mode="hybrid"),
+    AblationConfig(name="rrf-fusion", fusion_method="rrf"),
+    AblationConfig(name="high-semantic", semantic_weight=0.9, keyword_weight=0.1),
+    AblationConfig(name="high-keyword", semantic_weight=0.3, keyword_weight=0.7),
+]
+
+report = runner.run_all(configs)
+print(report.summary())
+```
+
+**Sample output:**
+
+```
+Experiment                    answer_accuracy  faithfulness  citation_accuracy  refusal_accuracy  mrr     hit@1
+baseline                      0.7143           1.0000        1.0000              0.8571            0.7500  0.7143
+with-lexical-rerank           0.7143           1.0000        1.0000              0.8571            0.7500  0.7143
+semantic-only                 0.7143           1.0000        1.0000              0.8571            0.7619  0.7143
+keyword-only                  0.8571           1.0000        1.0000              1.0000            0.7143  0.7143
+rrf-fusion                    0.7143           1.0000        1.0000              0.8571            0.7500  0.7143
+high-semantic                 0.7143           1.0000        1.0000              0.8571            0.7619  0.7143
+high-keyword                  0.7143           1.0000        1.0000              0.8571            0.7500  0.7143
+```
+
+Export results as JSON for paper tables:
+
+```python
+import json
+print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+```
+
+### Ablation Dimensions
+
+| Dimension | Options | What it tests |
+|-----------|---------|---------------|
+| **Reranker** | None, `lexical`, `cross-encoder` | Does reranking improve answer accuracy? |
+| **Search mode** | `auto`, `semantic`, `keyword`, `hybrid` | Which retrieval strategy works best? |
+| **Fusion method** | `weighted`, `rrf` | Which fusion produces better ranking? |
+| **Semantic weight** | 0.1 – 0.9 | How much should semantic vs keyword contribute? |
+| **Embedding provider** | `hashing`, `local` | Do real embeddings outperform hashing? |
+| **LLM provider** | `template`, `slm`, `openai` | Extractive vs generative RAG? |
+
+---
+
+## Baseline Comparison
+
+The baseline runner compares SemFuse's RAG pipeline against alternative
+approaches, using the same metrics for fair comparison.
+
+```python
+from semfuse.evaluation import BaselineRunner
+
+runner = BaselineRunner(documents, samples)
+report = runner.run_all()
+print(report.summary())
+```
+
+**Sample output:**
+
+```
+Baseline                       answer_accuracy  faithfulness  citation_accuracy  refusal_accuracy
+------------------------------------------------------------------------------------------------
+semfuse-template               0.7143           1.0000        1.0000              0.8571
+semfuse-slm                    0.7143           1.0000        1.0000              0.8571
+raw-slm                        0.0000           0.0000        0.0000              0.0000
+```
+
+| Baseline | Description |
+|----------|-------------|
+| `semfuse-template` | SemFuse with extractive template RAG (offline, zero-dep) |
+| `semfuse-slm` | SemFuse with local SLM RAG (llama-cpp-python, ~450 MB) |
+| `raw-slm` | Raw Qwen2.5-0.5B without retrieval (tests model's Bangla knowledge) |
+
+The raw LLM baseline is critical for papers — it shows whether the model
+already knows Bangla facts or whether retrieval is necessary.
+
+---
+
+## Academic Benchmarking
+
+A ready-to-run script that executes all evaluation modes and outputs
+summary tables suitable for a research paper:
+
+```bash
+python examples/benchmarking.py
+```
+
+This runs:
+1. **Retrieval evaluation** (Hit@K, NDCG@K, MRR, Recall@K)
+2. **RAG evaluation** (answer accuracy, faithfulness, citation accuracy, refusal accuracy)
+3. **Ablation experiments** (8 configs: baseline, rerank, semantic-only, keyword-only, hybrid, RRF, weight variations)
+4. **Baseline comparison** (SemFuse template vs SemFuse SLM vs raw SLM)
+
+Output is a formatted table. Use `report.to_dict()` to export as JSON for
+LaTeX table generation in your paper.
 
 ---
 
@@ -761,23 +971,6 @@ docker pull ghcr.io/dip-ro/semfuse:latest
 
 ---
 
-## Roadmap
-
-- [x] Phase 1 — Core foundation (embeddings, local store, semantic retrieval, persistence)
-- [x] Phase 2 — Language & Banglish normalization
-- [x] Phase 3 — Document ingestion (TXT/PDF/DOCX, chunking, dedup)
-- [x] Phase 4 — Keyword & hybrid retrieval, fusion, collections
-- [x] Phase 5 — Reranking (lexical + cross-encoder)
-- [x] Phase 6 — RAG (LLM providers, citations)
-- [x] Phase 7 — Evaluation (Recall@K, MRR, NDCG, Banglish benchmark)
-- [x] Phase 8 — Production quality (CLI, CI, Docker, docs, examples)
-- [ ] FAISS / Qdrant vector store backends (optional extras)
-- [ ] Anthropic / Gemini / Ollama LLM providers
-- [ ] Semantic chunking (in addition to recursive)
-- [ ] Larger Banglish benchmark dataset
-
----
-
 ## Project Structure
 
 ```
@@ -802,12 +995,12 @@ semfuse/
 │   ├── retrieval/                   # semantic, keyword, hybrid, fusion
 │   ├── reranking/                   # base, lexical, cross-encoder, factory
 │   ├── rag/                         # pipeline, providers, prompts, template
-│   ├── evaluation/                  # metrics, runner, banglish benchmark
+│   ├── evaluation/                  # retrieval + RAG metrics, ablation, baselines
 │   ├── cli/                         # main (info/index/search/ask)
 │   └── utils/                       # hashing, logging, paths, serialization
 │
 ├── tests/                           # 301 tests
-│   ├── unit/                        # init, metadata, dedup, vectorstore, etc.
+│   ├── unit/                        # init, metadata, dedup, vectorstore, RAG eval, etc.
 │   ├── integration/                 # real sentence-transformers cross-lingual
 │   ├── language/                    # detector, banglish
 │   ├── retrieval/                   # keyword, hybrid, fusion
@@ -817,7 +1010,8 @@ semfuse/
 │   ├── basic.py                     # smallest example
 │   ├── hybrid_and_rerank.py         # search modes + reranking
 │   ├── ingestion.py                 # files, directories, chunking
-│   └── rag.py                       # RAG with citations
+│   ├── rag.py                       # RAG with citations
+│   └── benchmarking.py              # academic benchmarking (ablation + baselines)
 │
 └── docs/
     ├── architecture.md              # layer design + module map
