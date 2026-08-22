@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+title: "SemFuse: Lightweight Multilingual Semantic Retrieval for Bangla, English, and Banglish with Evidence-Grounded RAG"
+message: "If you use SemFuse in your research, please cite it using this metadata."
+type: software
+version: 0.9.0
+license: Apache-2.0
+repository-code: "https://github.com/DIP-RO/Sem-fuse-rag-pip-package"
+url: "https://pypi.org/project/semfuse/"
+keywords:
+  - Bangla NLP
+  - semantic retrieval
+  - RAG
+  - Banglish
+  - cross-language retrieval
+  - hybrid search
+  - evidence grounding
+  - hallucination detection
+  - multilingual
+  - information retrieval
+preferred-citation:
+  type: software
+  title: "SemFuse: Lightweight Multilingual Semantic Retrieval for Bangla, English, and Banglish with Evidence-Grounded RAG"
+  version: 0.9.0
+  license: Apache-2.0
+  url: "https://github.com/DIP-RO/Sem-fuse-rag-pip-package"
+  date-released: "2026-08-22"
+  keywords:
+    - Bangla NLP
+    - semantic retrieval
+    - RAG
+    - Banglish
+    - cross-language retrieval

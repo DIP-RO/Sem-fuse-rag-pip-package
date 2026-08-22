@@ -1,0 +1,32 @@
+{
+  "title": "SemFuse: Lightweight Multilingual Semantic Retrieval for Bangla, English, and Banglish with Evidence-Grounded RAG",
+  "description": "SemFuse is a production-quality Python package for multilingual semantic retrieval with first-class support for Bangla, English, Banglish (romanized Bangla), and mixed-language content. It provides hybrid semantic/keyword retrieval, BM25, reciprocal rank fusion, optional reranking, persistent local vector storage, Banglish-to-Bangla transliteration, and an optional RAG layer with evidence grounding, citation verification, and hallucination detection. The package includes an academic benchmarking framework with ablation experiments and baseline comparisons. Lightweight core (83 KB wheel, numpy-only dependency), 310 tests, CPU-optimized (no GPU required). Apache 2.0 license.",
+  "license": "Apache-2.0",
+  "upload_type": "software",
+  "version": "0.9.0",
+  "keywords": [
+    "Bangla NLP",
+    "semantic retrieval",
+    "RAG",
+    "Banglish",
+    "cross-language retrieval",
+    "hybrid search",
+    "evidence grounding",
+    "hallucination detection",
+    "multilingual",
+    "information retrieval",
+    "Python"
+  ],
+  "creators": [
+    {
+      "name": "SemFuse Contributors"
+    }
+  ],
+  "access_right": "open",
+  "language": "eng",
+  "communities": [
+    {
+      "identifier": "software"
+    }
+  ]
+}
