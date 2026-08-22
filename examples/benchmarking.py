@@ -118,6 +118,10 @@ def main() -> None:
         AblationConfig(name="rrf-fusion", fusion_method="rrf"),
         AblationConfig(name="high-semantic", semantic_weight=0.9, keyword_weight=0.1),
         AblationConfig(name="high-keyword", semantic_weight=0.3, keyword_weight=0.7),
+        # Confidence threshold ablations — does refusing weak matches help?
+        AblationConfig(name="threshold-0.50", rag_confidence_threshold=0.50),
+        AblationConfig(name="threshold-0.75", rag_confidence_threshold=0.75),
+        AblationConfig(name="threshold-0.90", rag_confidence_threshold=0.90),
     ]
     ablation_report = ablation_runner.run_all(ablation_configs)
     print(ablation_report.summary())

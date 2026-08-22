@@ -425,6 +425,7 @@ class SemFuse:
         pipeline = RAGPipeline(
             retrieve=lambda q: self.search(q, top_k=top_k, filter=filter, mode=mode),
             llm=self._llm,
+            confidence_threshold=self._config.rag_confidence_threshold,
         )
         return pipeline.ask(question)
 

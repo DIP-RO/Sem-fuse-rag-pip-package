@@ -55,6 +55,10 @@ class SemFuseConfig:
     # semfuse[slm]), or "openai" (semfuse[rag]).
     llm_provider: str = "template"
     llm_model: str = DEFAULT_LLM_MODEL
+    # RAG refusal threshold: if the best retrieved score is below this,
+    # the pipeline refuses instead of answering from a weak match.
+    # 0.0 = never refuse based on score (old behavior); higher = stricter.
+    rag_confidence_threshold: float = 0.0
     # Extra provider-specific options forwarded to the LLM provider.
     llm_options: dict[str, object] = field(default_factory=dict)
     # When True, the embedding model is loaded on first use (not at construction).
@@ -71,6 +75,8 @@ class SemFuseConfig:
             raise ValueError("top_k must be positive")
         if not 0.0 <= self.score_threshold <= 1.0:
             raise ValueError("score_threshold must be between 0.0 and 1.0")
+        if not 0.0 <= self.rag_confidence_threshold <= 1.0:
+            raise ValueError("rag_confidence_threshold must be between 0.0 and 1.0")
         if self.chunk_size <= 0:
             raise ValueError("chunk_size must be positive")
         if not 0 <= self.chunk_overlap < self.chunk_size:

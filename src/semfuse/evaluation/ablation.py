@@ -60,6 +60,7 @@ class AblationConfig:
     fusion_method: str = "weighted"
     semantic_weight: float = 0.7
     keyword_weight: float = 0.3
+    rag_confidence_threshold: float = 0.0
 
 
 @dataclass
@@ -148,6 +149,10 @@ def default_ablation_configs() -> list[AblationConfig]:
         AblationConfig(name="rrf-fusion", fusion_method="rrf"),
         AblationConfig(name="high-semantic-weight", semantic_weight=0.9, keyword_weight=0.1),
         AblationConfig(name="high-keyword-weight", semantic_weight=0.3, keyword_weight=0.7),
+        # Confidence threshold ablations — does refusing weak matches help?
+        AblationConfig(name="threshold-0.50", rag_confidence_threshold=0.50),
+        AblationConfig(name="threshold-0.75", rag_confidence_threshold=0.75),
+        AblationConfig(name="threshold-0.90", rag_confidence_threshold=0.90),
     ]
 
 
@@ -183,6 +188,7 @@ class AblationRunner:
                 fusion_method=FusionMethod(config.fusion_method),
                 semantic_weight=config.semantic_weight,
                 keyword_weight=config.keyword_weight,
+                rag_confidence_threshold=config.rag_confidence_threshold,
             )
             db = SemFuse(config=cfg)
             # Index documents with their IDs as source.

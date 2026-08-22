@@ -39,18 +39,35 @@ class RAGPipeline:
     Error handling: if the primary LLM provider raises an exception during
     generation, the pipeline falls back to the extractive template provider
     so the user always gets a grounded, cited answer.
+
+    Confidence threshold: if ``confidence_threshold > 0`` and the best
+    retrieved score is below the threshold, the pipeline refuses instead
+    of answering from a weak match. This prevents hallucinated answers
+    from semantically-similar-but-irrelevant documents.
     """
 
-    def __init__(self, retrieve: RetrieveFn, llm: LLMProvider) -> None:
+    def __init__(
+        self,
+        retrieve: RetrieveFn,
+        llm: LLMProvider,
+        confidence_threshold: float = 0.0,
+    ) -> None:
         self._retrieve = retrieve
         self._llm = llm
+        self._confidence_threshold = confidence_threshold
 
     def ask(self, question: str) -> RAGResponse:
         if not isinstance(question, str) or not question.strip():
             raise RAGError("question must be a non-empty string")
 
         citations = self._retrieve(question)
-        if not citations:
+
+        # Refuse if no results OR if the best score is below the confidence
+        # threshold (weak match — likely irrelevant).
+        best_score = citations[0].score if citations else 0.0
+        if not citations or (
+            self._confidence_threshold > 0 and best_score < self._confidence_threshold
+        ):
             # Return "no context" in the same language as the question.
             answer = _NO_CONTEXT_BN if _detect_bangla(question) else _NO_CONTEXT_EN
             return RAGResponse(

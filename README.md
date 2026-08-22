@@ -8,7 +8,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/DIP-RO/Sem-fuse-rag-pip-package?style=flat)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/DIP-RO/Sem-fuse-rag-pip-package?style=flat)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/forks)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/pkgs/container/semfuse)
-[![Tests](https://img.shields.io/badge/tests-301%20passing-brightgreen)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-310%20passing-brightgreen)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/actions/workflows/ci.yml)
 
 > Lightweight multilingual semantic retrieval with first-class **Bangla**,
 > **English**, **Banglish**, and **mixed-language** support, plus an optional
@@ -112,7 +112,7 @@ Bangladesher rajdhani ki?            ← Banglish (variant)
 - **CLI**: `semfuse info | index | search | ask`
 - **Docker image**: multi-arch (amd64/arm64) on GHCR
 - **Lightweight core**: numpy + sentence-transformers only by default
-- **301 tests** (offline unit + integration + language + retrieval + persistence + SLM grounding + edge cases)
+- **310 tests** (offline unit + integration + language + retrieval + persistence + SLM grounding + edge cases)
 
 ---
 
@@ -765,6 +765,7 @@ print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
 | **Semantic weight** | 0.1 – 0.9 | How much should semantic vs keyword contribute? |
 | **Embedding provider** | `hashing`, `local` | Do real embeddings outperform hashing? |
 | **LLM provider** | `template`, `slm`, `openai` | Extractive vs generative RAG? |
+| **RAG confidence threshold** | 0.0 – 1.0 | Does refusing weak matches improve accuracy? |
 
 ---
 
@@ -848,6 +849,7 @@ All options can be passed to `SemFuse(...)` or set via `SemFuseConfig`.
 | `rerank_candidates` | `int` | `25` | Candidates fetched before reranking |
 | `llm_provider` | `str` | `"template"` | `"template"` (extractive), `"slm"` (local SLM), or `"openai"` |
 | `llm_model` | `str` | `"gpt-4o-mini"` | LLM/SLM model name (use `Qwen/Qwen2.5-0.5B-Instruct` for SLM) |
+| `rag_confidence_threshold` | `float` | `0.0` | RAG refusal threshold — refuse if best score < threshold (0.0 = never refuse on score) |
 | `device` | `str/None` | `None` | `"cpu"`, `"cuda"`, `"mps"`, or `None` (auto) |
 | `lazy` | `bool` | `True` | Lazy-load the embedding model on first use |
 
@@ -999,7 +1001,7 @@ semfuse/
 │   ├── cli/                         # main (info/index/search/ask)
 │   └── utils/                       # hashing, logging, paths, serialization
 │
-├── tests/                           # 301 tests
+├── tests/                           # 310 tests
 │   ├── unit/                        # init, metadata, dedup, vectorstore, RAG eval, etc.
 │   ├── integration/                 # real sentence-transformers cross-lingual
 │   ├── language/                    # detector, banglish
@@ -1024,13 +1026,13 @@ semfuse/
 ## Contributing
 
 Contributions are welcome. Please run `ruff check`, `mypy`, and `pytest` before
-submitting changes. Current status: **301/301 tests passing**, ruff clean, mypy clean.
+submitting changes. Current status: **310/310 tests passing**, ruff clean, mypy clean.
 
 ```bash
 pip install -e .[dev]
 ruff check src/semfuse tests
 mypy --python-version 3.12 src/semfuse
-pytest  # 301 tests
+pytest  # 310 tests
 ```
 
 ---
