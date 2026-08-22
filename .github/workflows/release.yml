@@ -92,4 +92,13 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           pip install twine
+          # Extract version from wheel filename: semfuse-0.9.0-py3-none-any.whl
+          VERSION=$(ls dist/*.whl 2>/dev/null | sed -n 's/.*semfuse-\([0-9][0-9.]*\)-.*/\1/p' | head -1)
+          if [ -n "$VERSION" ]; then
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/semfuse/$VERSION/json")
+            if [ "$STATUS" = "200" ]; then
+              echo "Version $VERSION already exists on PyPI — skipping upload."
+              exit 0
+            fi
+          fi
           twine upload dist/*
