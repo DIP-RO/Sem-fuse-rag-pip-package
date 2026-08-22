@@ -4,6 +4,65 @@ All notable changes to SemFuse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-08-22
+
+### Added — RAG evaluation framework for academic benchmarking
+
+New evaluation modules for research collaboration:
+
+- **`rag_metrics.py`** — 4 RAG-specific metrics:
+  - Answer accuracy (substring / token / exact modes, Bangla-aware)
+  - Faithfulness (token overlap with stopword removal, same algorithm as SLM grounding)
+  - Citation accuracy (do `[n]` markers point to supporting passages?)
+  - Refusal accuracy (does the system correctly refuse when no context?)
+
+- **`rag_runner.py`** — `RAGEvaluator` runs `db.ask()` and scores responses
+  with both retrieval metrics (Hit@K, NDCG@K, MRR) and RAG metrics
+
+- **`ablation.py`** — `AblationRunner` toggles features on/off:
+  - Reranker (None / lexical / cross-encoder)
+  - Search mode (auto / semantic / keyword / hybrid)
+  - Fusion method (weighted / RRF)
+  - Semantic/keyword weights (0.1–0.9)
+  - RAG confidence threshold (0.0–1.0)
+  - 11 default ablation configs included
+
+- **`baselines.py`** — `BaselineRunner` compares approaches:
+  - SemFuse template (extractive, offline)
+  - SemFuse SLM (generative, with grounding)
+  - Raw SLM (no retrieval — tests model's Bangla knowledge)
+
+- **`examples/benchmarking.py`** — ready-to-run script for paper tables
+
+### Added — RAG confidence threshold
+
+New `rag_confidence_threshold` config option (0.0–1.0, default 0.0):
+when the best retrieved score is below the threshold, the RAG pipeline
+refuses instead of answering from a weak match.
+
+Benchmark impact (hashing provider, 7 queries):
+- Without threshold: answer_accuracy=0.714, refusal_accuracy=0.857
+- With threshold=0.75: answer_accuracy=0.857, refusal_accuracy=0.857
+
+This fixes the key failure case where semantic search always finds a fuzzy
+match and answers from irrelevant documents instead of refusing.
+
+### Added — Benchmark results in README
+
+Real benchmark results from runnable evaluations:
+- Retrieval: Hit@1=0.833, MRR=0.875, NDCG@5=0.905
+- RAG: answer_accuracy=0.714, faithfulness=1.000, citation_accuracy=1.000
+- Ablation: 11 configs compared with key findings
+- Baselines: SemFuse vs raw SLM (0.714 vs 0.000 answer accuracy)
+
+### Changed
+
+- Development status: Alpha → Beta
+- 310 tests (up from 272)
+- 19 PyPI keywords (up from 8)
+
+---
+
 ## [0.8.0] — 2026-08-22
 
 ### Improved — CPU performance (no GPU needed)
