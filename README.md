@@ -9,7 +9,6 @@
 [![GitHub forks](https://img.shields.io/github/forks/DIP-RO/Sem-fuse-rag-pip-package?style=flat)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/forks)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/pkgs/container/semfuse)
 [![Tests](https://img.shields.io/badge/tests-310%20passing-brightgreen)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/actions/workflows/ci.yml)
-[![DOI](https://img.shields.io/badge/DOI-Zenodo-blue)](https://doi.org/10.5281/zenodo.semfuse)
 
 > Lightweight multilingual semantic retrieval with first-class **Bangla**,
 > **English**, **Banglish**, and **mixed-language** support, plus an optional
