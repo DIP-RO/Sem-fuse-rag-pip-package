@@ -8,7 +8,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/DIP-RO/Sem-fuse-rag-pip-package?style=flat)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/DIP-RO/Sem-fuse-rag-pip-package?style=flat)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/forks)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/pkgs/container/semfuse)
-[![Tests](https://img.shields.io/badge/tests-272%20passing-brightgreen)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-301%20passing-brightgreen)](https://github.com/DIP-RO/Sem-fuse-rag-pip-package/actions/workflows/ci.yml)
 
 > Lightweight multilingual semantic retrieval with first-class **Bangla**,
 > **English**, **Banglish**, and **mixed-language** support, plus an optional
@@ -106,7 +106,7 @@ Bangladesher rajdhani ki?            ← Banglish (variant)
 - **CLI**: `semfuse info | index | search | ask`
 - **Docker image**: multi-arch (amd64/arm64) on GHCR
 - **Lightweight core**: numpy + sentence-transformers only by default
-- **272 tests** (offline unit + integration + language + retrieval + persistence + SLM grounding + edge cases)
+- **301 tests** (offline unit + integration + language + retrieval + persistence + SLM grounding + edge cases)
 
 ---
 
@@ -806,7 +806,7 @@ semfuse/
 │   ├── cli/                         # main (info/index/search/ask)
 │   └── utils/                       # hashing, logging, paths, serialization
 │
-├── tests/                           # 272 tests
+├── tests/                           # 301 tests
 │   ├── unit/                        # init, metadata, dedup, vectorstore, etc.
 │   ├── integration/                 # real sentence-transformers cross-lingual
 │   ├── language/                    # detector, banglish
@@ -830,13 +830,13 @@ semfuse/
 ## Contributing
 
 Contributions are welcome. Please run `ruff check`, `mypy`, and `pytest` before
-submitting changes. Current status: **272/272 tests passing**, ruff clean, mypy clean.
+submitting changes. Current status: **301/301 tests passing**, ruff clean, mypy clean.
 
 ```bash
 pip install -e .[dev]
 ruff check src/semfuse tests
 mypy --python-version 3.12 src/semfuse
-pytest  # 272 tests
+pytest  # 301 tests
 ```
 
 ---
